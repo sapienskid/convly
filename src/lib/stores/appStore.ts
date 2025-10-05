@@ -6,14 +6,14 @@ export const characters = writable<Character[]>([
 	{
 		id: 'char-demo-1',
 		username: 'Alex Chen',
-		avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
+		avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=AlexChen&backgroundColor=b6e3f4,c0aede,d1d4f9&scale=90',
 		roleColor: '#3b82f6',
 		position: { x: 100, y: 100 }
 	},
 	{
 		id: 'char-demo-2',
 		username: 'Sarah Wilson',
-		avatar: 'https://images.unsplash.com/photo-1494790108755-2616b332c9ce?w=150&h=150&fit=crop&crop=face',
+		avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=SarahWilson&backgroundColor=b6e3f4,c0aede,d1d4f9&scale=90',
 		roleColor: '#8b5cf6',
 		position: { x: 100, y: 300 }
 	}
@@ -94,14 +94,71 @@ export const nodeConnectionModes = writable<Record<string, 'flow' | 'reply'>>({}
 export const previewState = writable<PreviewState>('preview');
 export const isGenerating = writable<boolean>(false);
 
-// Customization settings store
-export const customizeSettings = writable({
-	backgroundColor: 'hsl(var(--muted))',
-	primaryColor: 'hsl(var(--primary))',
-	secondaryColor: 'hsl(var(--secondary))',
-	textColor: 'hsl(var(--foreground))',
-	channelName: 'general'
-});
+// Load settings from localStorage if available
+const loadSettings = () => {
+	if (typeof window !== 'undefined') {
+		const saved = localStorage.getItem('convly_customizeSettings');
+		if (saved) {
+			try {
+				return JSON.parse(saved);
+			} catch (e) {
+				console.error('Failed to load settings:', e);
+			}
+		}
+	}
+	return null;
+};
+
+const defaultSettings = {
+	// Discord/Chat Room Settings
+	channelName: 'general',
+	// Color Settings
+	backgroundColor: '#313338',
+	backgroundImage: '',
+	backgroundTheme: 'none',
+	primaryColor: '#5865f2',
+	secondaryColor: '#3ba55d',
+	textColor: '#dcddde',
+	// Typography Settings
+	fontFamily: 'Inter',
+	fontSize: 16,
+	fontWeight: 'normal',
+	// Layout Settings
+	messageSpacing: 12,
+	messagePadding: 16,
+	messageAlignment: 'left',
+	showAvatars: true,
+	showTimestamps: true,
+	// Video Quality Settings
+	resolution: '1080p',
+	fps: 30,
+	quality: 'high',
+	// Timing Settings
+	messageDuration: 2.5,
+	transitionDuration: 0.3,
+	// Animation Settings
+	animationSpeed: 1,
+	enableTransitions: true,
+	animationStyle: 'smooth',
+	// Audio Settings
+	enableAudio: false,
+	backgroundMusicVolume: 70,
+	soundEffectsVolume: 50,
+	// Export Settings
+	exportFormat: 'mp4',
+	codec: 'h264',
+	enableCompression: true
+};
+
+// Customization settings store with persistence
+export const customizeSettings = writable(loadSettings() || defaultSettings);
+
+// Save to localStorage whenever settings change
+if (typeof window !== 'undefined') {
+	customizeSettings.subscribe((settings) => {
+		localStorage.setItem('convly_customizeSettings', JSON.stringify(settings));
+	});
+}
 
 // Derived stores for optimized lookups
 export const getCharacterById = (id: string) =>
@@ -444,10 +501,15 @@ export function addCharacterAtPosition(position: { x: number; y: number }): stri
 		y: Math.max(50, position.y + (Math.random() - 0.5) * 40)
 	};
 
-	const colors = ['hsl(var(--primary))', '#5865f2', '#57f287', '#fee75c', '#f23c50', '#eb459e', '#00d9ff'];
+	const colors = ['#3b82f6', '#8b5cf6', '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#ec4899'];
+	const avatarStyles = ['bottts', 'avataaars', 'pixel-art', 'lorelei', 'notionists'];
+	const username = `User ${chars.length + 1}`;
+	const randomStyle = avatarStyles[Math.floor(Math.random() * avatarStyles.length)];
+	const randomSeed = Math.random().toString(36).substring(7);
+	
 	const newCharacter = {
-		username: `User ${chars.length + 1}`,
-		avatar: `https://cdn.discordapp.com/embed/avatars/${Math.floor(Math.random() * 6)}.png`,
+		username,
+		avatar: `https://api.dicebear.com/7.x/${randomStyle}/svg?seed=${randomSeed}&backgroundColor=b6e3f4,c0aede,d1d4f9&scale=90`,
 		roleColor: colors[Math.floor(Math.random() * colors.length)],
 		position: adjustedPosition
 	};

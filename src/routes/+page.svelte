@@ -3,11 +3,36 @@
 	import LeftSidebar from '$lib/components/workspace/LeftSidebar.svelte';
 	import RightPanel from '$lib/components/workspace/RightPanel.svelte';
 	import PhonePreview from '$lib/components/workspace/PhonePreview.svelte';
+	import VideoControls from '$lib/components/workspace/VideoControls.svelte';
 	import BottomToolbar from '$lib/components/workspace/BottomToolbar.svelte';
+	import CharacterEditor from '$lib/components/workspace/CharacterEditor.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { ChevronRight, ChevronLeft } from 'lucide-svelte/icons';
 	
 	let isRightPanelCollapsed = $state(false);
+	
+	// Video Controls State
+	let isVideoPlaying = $state(false);
+	let videoCurrentTime = $state(0);
+	let videoDuration = $state(100);
+
+	function handleVideoPlayPause() {
+		isVideoPlaying = !isVideoPlaying;
+	}
+
+	function handleVideoRestart() {
+		videoCurrentTime = 0;
+		isVideoPlaying = false;
+	}
+
+	function handleVideoDownload() {
+		// TODO: Implement video download
+		console.log('Downloading video...');
+	}
+
+	function handleVideoSeek(time: number) {
+		videoCurrentTime = time;
+	}
 
 	import {
 		characters,
@@ -22,6 +47,7 @@
 		updateCharacterPosition,
 		updateMessagePosition,
 		updateMessageText,
+		updateCharacter,
 		addMessageForCharacter,
 		handleGenerateVideo,
 		handleApplyCustomization,
@@ -95,6 +121,19 @@
 		editingCharacter.set(id);
 	}
 
+	function handleCharacterUsernameUpdate(id: string, username: string) {
+		updateCharacter(id, { username });
+	}
+
+	function handleCharacterEditorClose() {
+		editingCharacter.set(null);
+	}
+
+	// Get the character being edited
+	const editingCharacterData = $derived(
+		$editingCharacter ? $characters.find(c => c.id === $editingCharacter) ?? null : null
+	);
+
 	function handleDelete() {
 		const element = $selectedElement;
 		if (!element) return;
@@ -166,6 +205,7 @@
 				onCharacterMove={updateCharacterPosition}
 				onMessageMove={updateMessagePosition}
 				onMessageTextUpdate={updateMessageText}
+				onCharacterUsernameUpdate={handleCharacterUsernameUpdate}
 				onElementSelect={handleElementSelect}
 				onAddMessage={addMessageForCharacter}
 				onCharacterEdit={handleCharacterEdit}
@@ -218,14 +258,28 @@
 				</div>
 			</div>
 			<div class="flex flex-1 items-center justify-center p-8 bg-gradient-to-b from-transparent to-accent/5">
-				<PhonePreview
-					characters={$characters}
-					messages={$messages}
-					connections={$connections}
-					previewState={$previewState}
-					isGenerating={$isGenerating}
-					customizeSettings={$customizeSettings}
-				/>
+				<div class="flex flex-col items-center gap-4">
+					<PhonePreview
+						characters={$characters}
+						messages={$messages}
+						connections={$connections}
+						previewState={$previewState}
+						isGenerating={$isGenerating}
+						customizeSettings={$customizeSettings}
+					/>
+					
+					{#if $previewState === 'video'}
+						<VideoControls
+							isPlaying={isVideoPlaying}
+							currentTime={videoCurrentTime}
+							duration={videoDuration}
+							onPlayPause={handleVideoPlayPause}
+							onRestart={handleVideoRestart}
+							onDownload={handleVideoDownload}
+							onSeek={handleVideoSeek}
+						/>
+					{/if}
+				</div>
 			</div>
 		</div>
 	</div>
@@ -260,4 +314,11 @@
 			/>
 		</div>
 	</div>
+
+	<!-- Character Editor Modal -->
+	<CharacterEditor
+		character={editingCharacterData}
+		open={$editingCharacter !== null}
+		onClose={handleCharacterEditorClose}
+	/>
 </div>

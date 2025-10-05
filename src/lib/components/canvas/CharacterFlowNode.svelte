@@ -3,6 +3,7 @@
 	import type { Character } from '$lib/types';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import { User, MessageSquarePlus, Edit3 } from 'lucide-svelte';
 
 	interface Props {
@@ -11,12 +12,40 @@
 			isSelected: boolean;
 			onEdit?: () => void;
 			onAddMessage?: () => void;
+			onUsernameUpdate?: (id: string, username: string) => void;
 			selectedTool?: string;
 		};
 		selected?: boolean;
 	}
 
 	let { data, selected = false }: Props = $props();
+
+	let isEditingUsername = $state(false);
+	let editUsername = $state(data.character.username);
+	let inputRef = $state<HTMLInputElement | null>(null);
+
+	const activateUsernameEditing = (event?: Event) => {
+		event?.stopPropagation();
+		isEditingUsername = true;
+		editUsername = data.character.username;
+	};
+
+	const handleUsernameSubmit = () => {
+		if (data.onUsernameUpdate && editUsername.trim()) {
+			data.onUsernameUpdate(data.character.id, editUsername.trim());
+		}
+		isEditingUsername = false;
+	};
+
+	const handleUsernameKeyDown = (e: KeyboardEvent) => {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			handleUsernameSubmit();
+		} else if (e.key === 'Escape') {
+			isEditingUsername = false;
+			editUsername = data.character.username;
+		}
+	};
 
 	const handleEdit = (e: MouseEvent) => {
 		e.stopPropagation();
@@ -30,8 +59,15 @@
 
 	const handleDoubleClick = (e: MouseEvent) => {
 		e.stopPropagation();
-		data.onEdit?.();
+		activateUsernameEditing(e);
 	};
+
+	$effect(() => {
+		if (isEditingUsername && inputRef) {
+			inputRef.focus();
+			inputRef.select();
+		}
+	});
 
 	const isConnectMode = $derived(data.selectedTool === 'connect');
 	const isSelectMode = $derived(data.selectedTool === 'select');
@@ -98,9 +134,36 @@
 			</Avatar>
 
 			<div class="flex-1 min-w-0">
-				<div class="font-semibold truncate text-sm" style="color: {data.character.roleColor}">
-					{data.character.username}
-				</div>
+				{#if isEditingUsername}
+					<Input
+						bind:value={editUsername}
+						bind:ref={inputRef}
+						onblur={handleUsernameSubmit}
+						onkeydown={handleUsernameKeyDown}
+						data-editing="true"
+						class="h-7 text-sm font-semibold border-border focus:border-blue-500 focus:ring-blue-500/20"
+						style="color: {data.character.roleColor}"
+						placeholder="Enter username..."
+						onclick={(e) => e.stopPropagation()}
+					/>
+				{:else}
+					<div
+						class="font-semibold truncate text-sm cursor-text hover:bg-muted/50 px-1 py-0.5 rounded transition-colors"
+						style="color: {data.character.roleColor}"
+						onclick={activateUsernameEditing}
+						onkeydown={(e) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault();
+								activateUsernameEditing(e);
+							}
+						}}
+						role="button"
+						tabindex="0"
+						title="Double-click to edit username"
+					>
+						{data.character.username}
+					</div>
+				{/if}
 				<div class="text-xs text-muted-foreground">Ready to speak</div>
 			</div>
 		</div>

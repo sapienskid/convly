@@ -1,11 +1,11 @@
 <script lang="ts">
 	import type { Character, Message, Connection } from '$lib/types';
 	import PhonePreview from './PhonePreview.svelte';
+	import VideoControls from './VideoControls.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { Slider } from '$lib/components/ui/slider';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/components/ui/select';
@@ -21,10 +21,8 @@
 		Layout,
 		Video,
 		Film,
-		Volume2,
-		Download,
-		Layers,
-		Users
+		Clock,
+		Palette
 	} from 'lucide-svelte/icons';
 
 	type SelectOption = { value: string; label: string };
@@ -52,9 +50,34 @@
 	}: Props = $props();
 
 	// Chat Room Settings
-	let serverName = $state(customizeSettings.serverName || 'My Discord Server');
 	let channelName = $state(customizeSettings.channelName || 'general');
-	let chatTopic = $state(customizeSettings.chatTopic || 'General Chat');
+	
+	// Sync local state with customizeSettings
+	$effect(() => {
+		channelName = customizeSettings.channelName || 'general';
+		fontFamily = customizeSettings.fontFamily || 'Inter';
+		fontSize = customizeSettings.fontSize || 16;
+		fontWeight = customizeSettings.fontWeight || 'normal';
+		messageSpacing = customizeSettings.messageSpacing || 12;
+		messagePadding = customizeSettings.messagePadding || 16;
+		messageAlignment = customizeSettings.messageAlignment || 'left';
+		showAvatars = customizeSettings.showAvatars ?? true;
+		showTimestamps = customizeSettings.showTimestamps ?? true;
+		resolution = customizeSettings.resolution || '1080p';
+		fps = customizeSettings.fps || 30;
+		quality = customizeSettings.quality || 'high';
+		animationSpeed = customizeSettings.animationSpeed || 1;
+		enableTransitions = customizeSettings.enableTransitions ?? true;
+		animationStyle = customizeSettings.animationStyle || 'smooth';
+		enableAudio = customizeSettings.enableAudio ?? false;
+		backgroundMusicVolume = customizeSettings.backgroundMusicVolume || 70;
+		soundEffectsVolume = customizeSettings.soundEffectsVolume || 50;
+		exportFormat = customizeSettings.exportFormat || 'mp4';
+		codec = customizeSettings.codec || 'h264';
+		enableCompression = customizeSettings.enableCompression ?? true;
+		backgroundImage = customizeSettings.backgroundImage || '';
+		backgroundTheme = customizeSettings.backgroundTheme || 'none';
+	});
 
 	const fontFamilyOptions: SelectOption[] = [
 		{ value: 'Inter', label: 'Inter' },
@@ -82,8 +105,7 @@
 	const resolutionOptions: SelectOption[] = [
 		{ value: '720p', label: '720p (1280x720)' },
 		{ value: '1080p', label: '1080p (1920x1080)' },
-		{ value: '1440p', label: '1440p (2560x1440)' },
-		{ value: '4k', label: '4K (3840x2160)' }
+		{ value: '1440p', label: '1440p (2560x1440)' }
 	];
 
 	const qualityOptions: SelectOption[] = [
@@ -93,25 +115,21 @@
 		{ value: 'ultra', label: 'Ultra (Slower)' }
 	];
 
-	const animationStyleOptions: SelectOption[] = [
-		{ value: 'smooth', label: 'Smooth' },
-		{ value: 'bounce', label: 'Bounce' },
-		{ value: 'elastic', label: 'Elastic' },
-		{ value: 'linear', label: 'Linear' }
-	];
+
 
 	const exportFormatOptions: SelectOption[] = [
-		{ value: 'mp4', label: 'MP4' },
-		{ value: 'webm', label: 'WebM' },
-		{ value: 'mov', label: 'MOV' },
-		{ value: 'gif', label: 'GIF' }
+		{ value: 'mp4', label: 'MP4 (Recommended)' },
+		{ value: 'webm', label: 'WebM' }
 	];
 
-	const codecOptions: SelectOption[] = [
-		{ value: 'h264', label: 'H.264 (Best compatibility)' },
-		{ value: 'h265', label: 'H.265 (Smaller file size)' },
-		{ value: 'vp9', label: 'VP9 (WebM)' },
-		{ value: 'av1', label: 'AV1 (Newest)' }
+	const backgroundThemeOptions: SelectOption[] = [
+		{ value: 'none', label: 'None (Solid Color)' },
+		{ value: 'gradient1', label: 'Purple Gradient' },
+		{ value: 'gradient2', label: 'Blue Gradient' },
+		{ value: 'gradient3', label: 'Green Gradient' },
+		{ value: 'pattern1', label: 'Grid Pattern' },
+		{ value: 'pattern2', label: 'Dots Pattern' },
+		{ value: 'custom', label: 'Custom Image' }
 	];
 
 	const getOptionLabel = (options: SelectOption[], value: string, placeholder: string) => {
@@ -154,11 +172,21 @@
 	let codec = $state('h264');
 	let enableCompression = $state(true);
 
+	// New Timing Settings
+	let messageDuration = $state(2.5); // seconds per message
+	let transitionDuration = $state(0.3); // seconds for transitions
+	let backgroundColor = $state('#313338');
+	let backgroundImage = $state('');
+	let backgroundTheme = $state('none');
+
+	// Video Controls State
+	let isVideoPlaying = $state(false);
+	let videoCurrentTime = $state(0);
+	let videoDuration = $state(100);
+
 	function handleApplySettings() {
 		onCustomizationApply({
-			serverName,
 			channelName,
-			chatTopic,
 			fontFamily,
 			fontSize,
 			fontWeight,
@@ -178,8 +206,31 @@
 			soundEffectsVolume,
 			exportFormat,
 			codec,
-			enableCompression
+			enableCompression,
+			messageDuration,
+			transitionDuration,
+			backgroundColor,
+			backgroundImage,
+			backgroundTheme
 		});
+	}
+
+	function handleVideoPlayPause() {
+		isVideoPlaying = !isVideoPlaying;
+	}
+
+	function handleVideoRestart() {
+		videoCurrentTime = 0;
+		isVideoPlaying = false;
+	}
+
+	function handleVideoDownload() {
+		// TODO: Implement video download
+		console.log('Downloading video...');
+	}
+
+	function handleVideoSeek(time: number) {
+		videoCurrentTime = time;
 	}
 </script>
 
@@ -200,31 +251,23 @@
 	</div>
 
 	<!-- Scrollable Customization Panel -->
-	<div class="flex-1 overflow-hidden">
-		<ScrollArea class="h-full">
-			<div class="p-6">
-			<Accordion type="multiple" class="w-full space-y-2">
-				<!-- Chat Room Settings -->
-				<AccordionItem value="chat-room">
+	<div class="flex-1 overflow-y-auto">
+		<div class="p-6 pb-32">
+			<Accordion type="multiple" value={['typography', 'layout', 'timing', 'video']} class="w-full space-y-2">
+				<!-- Appearance Settings -->
+				<AccordionItem value="appearance">
 					<AccordionTrigger>
 						<div class="flex items-center gap-2">
-							<MessageSquare class="size-4" />
-							<span>Chat Room</span>
+							<Palette class="size-4" />
+							<span>Appearance</span>
 						</div>
 					</AccordionTrigger>
 					<AccordionContent>
 						<div class="space-y-4 pt-2">
 							<div>
-								<Label for="server-name" class="text-sm">Server Name</Label>
-								<Input id="server-name" bind:value={serverName} class="mt-1.5" onblur={handleApplySettings} />
-							</div>
-							<div>
 								<Label for="channel-name" class="text-sm">Channel Name</Label>
-								<Input id="channel-name" bind:value={channelName} class="mt-1.5" onblur={handleApplySettings} />
-							</div>
-							<div>
-								<Label for="chat-topic" class="text-sm">Chat Topic</Label>
-								<Input id="chat-topic" bind:value={chatTopic} class="mt-1.5" onblur={handleApplySettings} />
+								<Input id="channel-name" bind:value={channelName} class="mt-1.5" onblur={handleApplySettings} placeholder="general" />
+								<p class="text-xs text-muted-foreground mt-1">Appears in the chat header</p>
 							</div>
 						</div>
 					</AccordionContent>
@@ -261,19 +304,6 @@
 								</Select>
 							</div>
 							<div>
-								<Label for="font-size" class="text-sm">Font Size: {fontSize}px</Label>
-								<Slider
-									id="font-size"
-									type="single"
-									bind:value={fontSize}
-									min={12}
-									max={24}
-									step={1}
-									class="mt-2"
-									onValueCommit={handleApplySettings}
-								/>
-							</div>
-							<div>
 								<Label for="font-weight" class="text-sm">Font Weight</Label>
 								<Select
 									type="single"
@@ -307,52 +337,6 @@
 					</AccordionTrigger>
 					<AccordionContent>
 						<div class="space-y-4 pt-2">
-							<div>
-								<Label for="message-spacing" class="text-sm">Message Spacing: {messageSpacing}px</Label>
-								<Slider
-									id="message-spacing"
-									type="single"
-									bind:value={messageSpacing}
-									min={4}
-									max={32}
-									step={2}
-									class="mt-2"
-									onValueCommit={handleApplySettings}
-								/>
-							</div>
-							<div>
-								<Label for="message-padding" class="text-sm">Message Padding: {messagePadding}px</Label>
-								<Slider
-									id="message-padding"
-									type="single"
-									bind:value={messagePadding}
-									min={8}
-									max={32}
-									step={2}
-									class="mt-2"
-									onValueCommit={handleApplySettings}
-								/>
-							</div>
-							<div>
-								<Label for="message-alignment" class="text-sm">Message Alignment</Label>
-								<Select
-									type="single"
-									bind:value={messageAlignment}
-									items={messageAlignmentOptions}
-									onValueChange={handleApplySettings}
-								>
-									<SelectTrigger id="message-alignment" class="mt-1.5">
-										<span data-slot="select-value" class={selectTriggerTextClass(Boolean(messageAlignment))}>
-											{getOptionLabel(messageAlignmentOptions, messageAlignment, 'Select alignment')}
-										</span>
-									</SelectTrigger>
-									<SelectContent>
-										{#each messageAlignmentOptions as option}
-											<SelectItem value={option.value} label={option.label}>{option.label}</SelectItem>
-										{/each}
-									</SelectContent>
-								</Select>
-							</div>
 							<div class="flex items-center justify-between">
 								<Label for="show-avatars" class="text-sm">Show Avatars</Label>
 								<Switch id="show-avatars" bind:checked={showAvatars} onCheckedChange={handleApplySettings} />
@@ -370,7 +354,7 @@
 					<AccordionTrigger>
 						<div class="flex items-center gap-2">
 							<Video class="size-4" />
-							<span>Video Quality</span>
+							<span>Video Output</span>
 						</div>
 					</AccordionTrigger>
 					<AccordionContent>
@@ -394,6 +378,7 @@
 										{/each}
 									</SelectContent>
 								</Select>
+								<p class="text-xs text-muted-foreground mt-1">1080p recommended for most uses</p>
 							</div>
 							<div>
 								<Label for="fps" class="text-sm">Frame Rate: {fps} FPS</Label>
@@ -401,143 +386,75 @@
 									id="fps"
 									type="single"
 									bind:value={fps}
-									min={24}
+									min={30}
 									max={60}
-									step={6}
+									step={30}
 									class="mt-2"
 									onValueCommit={handleApplySettings}
 								/>
-							</div>
-							<div>
-								<Label for="quality" class="text-sm">Quality Preset</Label>
-								<Select
-									type="single"
-									bind:value={quality}
-									items={qualityOptions}
-									onValueChange={handleApplySettings}
-								>
-									<SelectTrigger id="quality" class="mt-1.5">
-										<span data-slot="select-value" class={selectTriggerTextClass(Boolean(quality))}>
-											{getOptionLabel(qualityOptions, quality, 'Select quality')}
-										</span>
-									</SelectTrigger>
-									<SelectContent>
-										{#each qualityOptions as option}
-											<SelectItem value={option.value} label={option.label}>{option.label}</SelectItem>
-										{/each}
-									</SelectContent>
-								</Select>
+								<p class="text-xs text-muted-foreground mt-1">30 FPS for smaller files, 60 FPS for smoother</p>
 							</div>
 						</div>
 					</AccordionContent>
 				</AccordionItem>
 
-				<!-- Animation -->
-				<AccordionItem value="animation">
+				<!-- Timing Settings -->
+				<AccordionItem value="timing">
 					<AccordionTrigger>
 						<div class="flex items-center gap-2">
-							<Film class="size-4" />
-							<span>Animation</span>
+							<Clock class="size-4" />
+							<span>Timing</span>
 						</div>
 					</AccordionTrigger>
 					<AccordionContent>
 						<div class="space-y-4 pt-2">
 							<div>
-								<Label for="animation-speed" class="text-sm">Animation Speed: {animationSpeed}x</Label>
+								<Label for="message-duration" class="text-sm">Message Duration: {messageDuration.toFixed(1)}s</Label>
 								<Slider
-									id="animation-speed"
+									id="message-duration"
 									type="single"
-									bind:value={animationSpeed}
+									bind:value={messageDuration}
 									min={0.5}
-									max={2}
+									max={5}
 									step={0.1}
 									class="mt-2"
 									onValueCommit={handleApplySettings}
 								/>
+								<p class="text-xs text-muted-foreground mt-1">Time each message stays on screen</p>
 							</div>
 							<div>
-								<Label for="animation-style" class="text-sm">Animation Style</Label>
-								<Select
+								<Label for="transition-duration" class="text-sm">Transition Duration: {transitionDuration.toFixed(2)}s</Label>
+								<Slider
+									id="transition-duration"
 									type="single"
-									bind:value={animationStyle}
-									items={animationStyleOptions}
-									onValueChange={handleApplySettings}
-								>
-									<SelectTrigger id="animation-style" class="mt-1.5">
-										<span data-slot="select-value" class={selectTriggerTextClass(Boolean(animationStyle))}>
-											{getOptionLabel(animationStyleOptions, animationStyle, 'Select style')}
-										</span>
-									</SelectTrigger>
-									<SelectContent>
-										{#each animationStyleOptions as option}
-											<SelectItem value={option.value} label={option.label}>{option.label}</SelectItem>
-										{/each}
-									</SelectContent>
-								</Select>
+									bind:value={transitionDuration}
+									min={0.1}
+									max={1}
+									step={0.05}
+									class="mt-2"
+									onValueCommit={handleApplySettings}
+								/>
+								<p class="text-xs text-muted-foreground mt-1">Animation speed between messages</p>
 							</div>
 							<div class="flex items-center justify-between">
 								<Label for="enable-transitions" class="text-sm">Enable Transitions</Label>
 								<Switch id="enable-transitions" bind:checked={enableTransitions} onCheckedChange={handleApplySettings} />
 							</div>
-						</div>
-					</AccordionContent>
-				</AccordionItem>
-
-				<!-- Audio -->
-				<AccordionItem value="audio">
-					<AccordionTrigger>
-						<div class="flex items-center gap-2">
-							<Volume2 class="size-4" />
-							<span>Audio</span>
-						</div>
-					</AccordionTrigger>
-					<AccordionContent>
-						<div class="space-y-4 pt-2">
-							<div class="flex items-center justify-between">
-								<Label for="enable-audio" class="text-sm">Enable Audio</Label>
-								<Switch id="enable-audio" bind:checked={enableAudio} onCheckedChange={handleApplySettings} />
+							<Separator class="my-2" />
+							<div class="bg-muted/50 rounded-lg p-3">
+								<p class="text-xs text-muted-foreground mb-1">Estimated Video Length</p>
+								<p class="text-lg font-bold">{((messages.length * messageDuration) + ((messages.length - 1) * transitionDuration)).toFixed(1)}s</p>
 							</div>
-							<div>
-								<Label for="bg-music-volume" class="text-sm">Background Music: {backgroundMusicVolume}%</Label>
-								<Slider
-									id="bg-music-volume"
-									type="single"
-									bind:value={backgroundMusicVolume}
-									min={0}
-									max={100}
-									step={5}
-									class="mt-2"
-									disabled={!enableAudio}
-									onValueCommit={handleApplySettings}
-								/>
-							</div>
-							<div>
-								<Label for="sfx-volume" class="text-sm">Sound Effects: {soundEffectsVolume}%</Label>
-								<Slider
-									id="sfx-volume"
-									type="single"
-									bind:value={soundEffectsVolume}
-									min={0}
-									max={100}
-									step={5}
-									class="mt-2"
-									disabled={!enableAudio}
-									onValueCommit={handleApplySettings}
-								/>
-							</div>
-							<Button variant="outline" size="sm" class="w-full" disabled={!enableAudio}>
-								Upload Background Music
-							</Button>
 						</div>
 					</AccordionContent>
 				</AccordionItem>
 
 				<!-- Export Format -->
-				<AccordionItem value="export-format">
+				<AccordionItem value="video">
 					<AccordionTrigger>
 						<div class="flex items-center gap-2">
-							<Download class="size-4" />
-							<span>Export Format</span>
+							<Film class="size-4" />
+							<span>Export Settings</span>
 						</div>
 					</AccordionTrigger>
 					<AccordionContent>
@@ -561,86 +478,50 @@
 										{/each}
 									</SelectContent>
 								</Select>
+								<p class="text-xs text-muted-foreground mt-1">Video file format</p>
 							</div>
 							<div>
-								<Label for="codec" class="text-sm">Codec</Label>
+								<Label for="quality" class="text-sm">Quality Preset</Label>
 								<Select
 									type="single"
-									bind:value={codec}
-									items={codecOptions}
+									bind:value={quality}
+									items={qualityOptions}
 									onValueChange={handleApplySettings}
 								>
-									<SelectTrigger id="codec" class="mt-1.5">
-										<span data-slot="select-value" class={selectTriggerTextClass(Boolean(codec))}>
-											{getOptionLabel(codecOptions, codec, 'Select codec')}
+									<SelectTrigger id="quality" class="mt-1.5">
+										<span data-slot="select-value" class={selectTriggerTextClass(Boolean(quality))}>
+											{getOptionLabel(qualityOptions, quality, 'Select quality')}
 										</span>
 									</SelectTrigger>
 									<SelectContent>
-										{#each codecOptions as option}
+										{#each qualityOptions as option}
 											<SelectItem value={option.value} label={option.label}>{option.label}</SelectItem>
 										{/each}
 									</SelectContent>
 								</Select>
-							</div>
-							<div class="flex items-center justify-between">
-								<Label for="enable-compression" class="text-sm">Enable Compression</Label>
-								<Switch id="enable-compression" bind:checked={enableCompression} onCheckedChange={handleApplySettings} />
-							</div>
-						</div>
-					</AccordionContent>
-				</AccordionItem>
-
-				<!-- Templates -->
-				<AccordionItem value="templates">
-					<AccordionTrigger>
-						<div class="flex items-center gap-2">
-							<Layers class="size-4" />
-							<span>Templates</span>
-						</div>
-					</AccordionTrigger>
-					<AccordionContent>
-						<div class="space-y-3 pt-2">
-							<p class="text-xs text-muted-foreground">Choose a template to get started quickly</p>
-							<div class="grid grid-cols-2 gap-2">
-								<Button variant="outline" size="sm" class="h-20 flex-col gap-1">
-									<MessageSquare class="size-4" />
-									<span class="text-xs">Discord</span>
-								</Button>
-								<Button variant="outline" size="sm" class="h-20 flex-col gap-1">
-									<MessageSquare class="size-4" />
-									<span class="text-xs">Slack</span>
-								</Button>
-								<Button variant="outline" size="sm" class="h-20 flex-col gap-1">
-									<MessageSquare class="size-4" />
-									<span class="text-xs">Twitter</span>
-								</Button>
-								<Button variant="outline" size="sm" class="h-20 flex-col gap-1">
-									<MessageSquare class="size-4" />
-									<span class="text-xs">Custom</span>
-								</Button>
+								<p class="text-xs text-muted-foreground mt-1">Higher quality = larger file size</p>
 							</div>
 						</div>
 					</AccordionContent>
 				</AccordionItem>
 			</Accordion>
-			</div>
-		</ScrollArea>
+		</div>
 	</div>
 
-	<!-- Generate Button -->
-	<div class="border-t border-border bg-card/80 backdrop-blur-sm p-6 flex-shrink-0">
+	<!-- Generate Video Button (Fixed at Bottom) -->
+	<div class="absolute bottom-0 left-0 right-0 border-t border-border bg-card/95 backdrop-blur-sm p-4 flex-shrink-0">
 		<Button
-			class="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 shadow-lg hover:shadow-xl transition-all duration-200"
+			class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:from-purple-700 hover:to-pink-700 shadow-lg hover:shadow-xl transition-all duration-200"
 			onclick={onGenerateVideo}
 			disabled={isGenerating}
 			size="lg"
 		>
 			{#if isGenerating}
 				<div class="mr-2 h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-				<span>Generating...</span>
+				<span>Generating Video...</span>
 			{:else}
-				<Download class="mr-2 size-5" />
-				<span class="font-semibold">Save Project</span>
+				<Film class="mr-2 size-5" />
+				<span class="font-semibold">Generate Video</span>
 			{/if}
 		</Button>
 	</div>

@@ -13,9 +13,19 @@
 		isGenerating?: boolean;
 		customizeSettings?: {
 			backgroundColor?: string;
+			backgroundImage?: string;
+			backgroundTheme?: string;
 			primaryColor?: string;
 			textColor?: string;
 			channelName?: string;
+			fontFamily?: string;
+			fontSize?: number;
+			fontWeight?: string;
+			messageSpacing?: number;
+			messagePadding?: number;
+			messageAlignment?: string;
+			showAvatars?: boolean;
+			showTimestamps?: boolean;
 		};
 	}
 
@@ -28,10 +38,75 @@
 	}: Props = $props();
 
 	const messageFlowInfo = $derived(analyzeMessageFlow(messages, connections));
-	const backgroundColor = $derived(customizeSettings.backgroundColor || '#36393f');
+	const backgroundColor = $derived(customizeSettings.backgroundColor || '#313338');
+	const backgroundImage = $derived(customizeSettings.backgroundImage || '');
+	const backgroundTheme = $derived(customizeSettings.backgroundTheme || 'none');
 	const primaryColor = $derived(customizeSettings.primaryColor || '#5865f2');
 	const textColor = $derived(customizeSettings.textColor || '#dcddde');
 	const channelName = $derived(customizeSettings.channelName || 'general');
+	
+	// Generate background style based on theme
+	const backgroundStyle = $derived(() => {
+		const baseColor = backgroundColor;
+		const opacity = '88'; // Semi-transparent overlay (about 53%)
+		
+		switch (backgroundTheme) {
+			case 'gradient1':
+				return `linear-gradient(135deg, ${baseColor}${opacity} 0%, #6b46c1${opacity} 100%)`;
+			case 'gradient2':
+				return `linear-gradient(135deg, ${baseColor}${opacity} 0%, #3b82f6${opacity} 100%)`;
+			case 'gradient3':
+				return `linear-gradient(135deg, ${baseColor}${opacity} 0%, #10b981${opacity} 100%)`;
+			case 'pattern1':
+				return `repeating-linear-gradient(0deg, transparent, transparent 20px, ${baseColor}30 20px, ${baseColor}30 21px), repeating-linear-gradient(90deg, transparent, transparent 20px, ${baseColor}30 20px, ${baseColor}30 21px), ${baseColor}`;
+			case 'pattern2':
+				return `radial-gradient(circle at 10px 10px, ${baseColor}50 2px, transparent 2px), ${baseColor}`;
+			case 'custom':
+				return backgroundImage ? `linear-gradient(${baseColor}${opacity}, ${baseColor}${opacity}), url(${backgroundImage})` : baseColor;
+			default:
+				return baseColor;
+		}
+	});
+	
+	// Adapt foreground colors based on background luminance
+	const adaptedColors = $derived(() => {
+		// Simple luminance calculation
+		const hex = backgroundColor.replace('#', '');
+		const r = parseInt(hex.substr(0, 2), 16);
+		const g = parseInt(hex.substr(2, 2), 16);
+		const b = parseInt(hex.substr(4, 2), 16);
+		const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+		
+		const isDark = luminance < 0.5;
+		
+		return {
+			header: isDark ? `${backgroundColor}dd` : `${backgroundColor}ee`,
+			headerBorder: isDark ? `${backgroundColor}44` : `${backgroundColor}66`,
+			hover: isDark ? `${backgroundColor}88` : `${backgroundColor}aa`,
+			input: isDark ? `${backgroundColor}66` : `${backgroundColor}88`,
+			text: isDark ? '#dcddde' : '#1f2937',
+			textMuted: isDark ? `${textColor}88` : '#6b7280',
+			textDim: isDark ? `${textColor}66` : '#9ca3af',
+			textFaint: isDark ? `${textColor}50` : '#d1d5db'
+		};
+	});
+	const fontFamily = $derived(customizeSettings.fontFamily || 'Inter');
+	const fontSize = $derived(customizeSettings.fontSize || 16);
+	const fontWeight = $derived(customizeSettings.fontWeight || 'normal');
+	const messageSpacing = $derived(customizeSettings.messageSpacing || 12);
+	const messagePadding = $derived(customizeSettings.messagePadding || 16);
+	const messageAlignment = $derived(customizeSettings.messageAlignment || 'left');
+	const showAvatars = $derived(customizeSettings.showAvatars ?? true);
+	const showTimestamps = $derived(customizeSettings.showTimestamps ?? true);
+	
+	// Convert font weight to CSS value
+	const fontWeightValue = $derived(
+		fontWeight === 'light' ? '300' :
+		fontWeight === 'normal' ? '400' :
+		fontWeight === 'medium' ? '500' :
+		fontWeight === 'semibold' ? '600' :
+		fontWeight === 'bold' ? '700' : '400'
+	);
 </script>
 
 <div class="relative">
@@ -58,23 +133,23 @@
 			<div class="h-[calc(100%-24px)]">
 				{#if previewState === 'preview' || previewState === 'video'}
 					<!-- Discord Chat UI -->
-					<div class="h-full flex flex-col" style="background-color: {backgroundColor}">
+					<div class="h-full flex flex-col" style="background: {backgroundStyle()}; background-size: cover; background-position: center;">
 						<!-- Discord Mobile Header -->
 						<div
-							class="px-3 py-2 border-b flex items-center justify-between flex-shrink-0 shadow-sm"
-							style="background-color: {backgroundColor === '#36393f' ? '#2f3136' : `${backgroundColor}dd`}; border-bottom-color: {backgroundColor === '#36393f' ? '#202225' : `${backgroundColor}44`}"
+							class="px-3 py-2 border-b flex items-center justify-between flex-shrink-0 shadow-sm backdrop-blur-sm"
+							style="background-color: {adaptedColors().header}; border-bottom-color: {adaptedColors().headerBorder}"
 						>
 							<div class="flex items-center flex-1 min-w-0">
 								<!-- Channel Icon & Name -->
 								<div class="flex items-center gap-2 flex-1 min-w-0">
-									<div
-										class="w-6 h-6 rounded flex items-center justify-center flex-shrink-0"
-										style="background-color: {backgroundColor === '#36393f' ? '#42464d' : `${backgroundColor}88`}"
-									>
-										<span class="text-white text-xs font-semibold">#</span>
-									</div>
-									<div class="flex-1 min-w-0">
-										<div class="text-sm font-semibold truncate" style="color: {textColor}">
+								<div
+									class="w-6 h-6 rounded flex items-center justify-center flex-shrink-0"
+									style="background-color: {adaptedColors().hover}"
+								>
+									<span class="text-xs font-semibold" style="color: {adaptedColors().text}">#</span>
+								</div>
+								<div class="flex-1 min-w-0">
+									<div class="text-sm font-semibold truncate" style="color: {adaptedColors().text}">
 											{channelName}
 										</div>
 									</div>
@@ -98,21 +173,21 @@
 						</div>
 
 						<!-- Messages Area -->
-						<ScrollArea class="flex-1 px-3 py-4">
-							<div class="space-y-4">
+						<ScrollArea class="flex-1 px-1 py-4">
+							<div style="gap: {messageSpacing}px; display: flex; flex-direction: column; font-family: {fontFamily}; text-align: {messageAlignment};">
 								{#if messageFlowInfo.length === 0}
 									<!-- Welcome Message -->
 									<div class="flex flex-col items-center justify-center py-8 text-center">
-										<div 
-											class="w-16 h-16 rounded-full flex items-center justify-center mb-4"
-											style="background-color: {backgroundColor === '#36393f' ? '#42464d' : `${backgroundColor}88`}"
-										>
-											<span class="text-2xl font-bold" style="color: {textColor}88">#</span>
-										</div>
-										<div class="text-base font-semibold mb-1" style="color: {textColor}">
-											Welcome to #{channelName}!
-										</div>
-										<div class="text-xs px-6" style="color: {textColor}66">
+									<div 
+										class="w-16 h-16 rounded-full flex items-center justify-center mb-4"
+										style="background-color: {adaptedColors().hover}"
+									>
+										<span class="text-2xl font-bold" style="color: {adaptedColors().textMuted}">#</span>
+									</div>
+									<div class="text-base font-semibold mb-1" style="color: {adaptedColors().text}">
+										Welcome to #{channelName}!
+									</div>
+									<div class="text-xs px-6" style="color: {adaptedColors().textDim}">
 											This is the beginning of the #{channelName} channel.
 										</div>
 									</div>
@@ -135,36 +210,40 @@
 
 										{#if !isGrouped}
 											<!-- Full Message with Avatar -->
-											<div class="flex items-start gap-3 hover:bg-white/5 -mx-3 px-3 py-0.5 rounded transition-colors">
-												<Avatar class="w-10 h-10 flex-shrink-0 mt-0.5">
-													<AvatarImage src={displayCharacter.avatar} alt={displayCharacter.username} />
+											<div class="flex items-start gap-3 hover:bg-white/5 rounded transition-colors" style="padding: {messagePadding / 4}px {messagePadding / 2}px;">
+												{#if showAvatars}
+												<Avatar class="w-10 h-10 flex-shrink-0 mt-0.5" style="border-radius: 50%; overflow: hidden;">
+													<AvatarImage src={displayCharacter.avatar} alt={displayCharacter.username} style="border-radius: 50%; width: 100%; height: 100%; object-fit: cover;" />
 													<AvatarFallback
 														class="text-white text-xs font-semibold"
-														style="background-color: {displayCharacter.roleColor}"
+														style="background-color: {displayCharacter.roleColor}; border-radius: 50%; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"
 													>
 														{displayCharacter.username.slice(0, 2).toUpperCase()}
 													</AvatarFallback>
 												</Avatar>
+												{/if}
 
-												<div class="flex-1 min-w-0">
+												<div class="flex-1 min-w-0" style="margin-left: {showAvatars ? '0' : '0'}">
 													<div class="flex items-baseline gap-2 mb-0.5">
 														<span
-															class="text-sm font-semibold"
-															style="color: {character ? displayCharacter.roleColor : '#99aab5'}"
+															class="font-semibold"
+															style="color: {character ? displayCharacter.roleColor : '#99aab5'}; font-size: {fontSize}px; font-weight: {fontWeightValue};"
 														>
 															{displayCharacter.username}
 														</span>
 														{#if !character}
-															<span class="text-xs px-1.5 py-0.5 rounded" style="background-color: {backgroundColor === '#36393f' ? '#42464d' : `${backgroundColor}88`}; color: {textColor}88">
+															<span class="text-xs px-1.5 py-0.5 rounded" style="background-color: {adaptedColors().hover}; color: {adaptedColors().textMuted}">
 																Unassigned
 															</span>
 														{/if}
-														<span class="text-xs font-medium" style="color: {textColor}50">
+														{#if showTimestamps}
+														<span class="text-xs font-medium" style="color: {adaptedColors().textFaint}">
 															{new Date(message.timestamp).toLocaleTimeString([], {
 																hour: 'numeric',
 																minute: '2-digit'
 															})}
 														</span>
+														{/if}
 													</div>
 
 													{#if replyMessage}
@@ -200,8 +279,8 @@
 													{/if}
 
 													<div
-														class="text-sm leading-relaxed break-words"
-														style="color: {textColor}e6"
+														class="leading-relaxed break-words"
+														style="color: {textColor}e6; font-size: {fontSize}px; font-weight: {fontWeightValue}; padding: {messagePadding / 8}px 0;"
 													>
 														{message.text}
 													</div>
@@ -209,7 +288,8 @@
 											</div>
 										{:else}
 											<!-- Grouped Message (no avatar) -->
-											<div class="flex items-start gap-3 hover:bg-white/5 -mx-3 px-3 py-0.5 rounded transition-colors group">
+											<div class="flex items-start gap-3 hover:bg-white/5 rounded transition-colors group" style="padding: {messagePadding / 4}px {messagePadding / 2}px;">
+												{#if showAvatars && showTimestamps}
 												<div class="w-10 flex-shrink-0 flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity">
 													<span class="text-[10px] font-medium" style="color: {textColor}40">
 														{new Date(message.timestamp).toLocaleTimeString([], {
@@ -218,43 +298,44 @@
 														})}
 													</span>
 												</div>
+												{/if}
 
-										<div class="flex-1 min-w-0">
-											{#if replyMessage}
-												<div
-													class="mb-2 rounded-md border-l-[4px] pl-3 pr-3 py-2 cursor-pointer hover:bg-black/10 transition-all"
-													style="
-														border-color: {replyCharacter ? replyCharacter.roleColor : '#4f545c'};
-														background: linear-gradient(90deg, {replyCharacter ? `${replyCharacter.roleColor}15` : 'rgba(79, 84, 92, 0.15)'} 0%, rgba(79, 84, 92, 0.05) 100%);
-													"
-												>
-													<div class="flex items-start gap-2">
-														<svg class="w-3.5 h-3.5 shrink-0 mt-0.5 opacity-70" style="color: {replyCharacter ? replyCharacter.roleColor : '#b9bbbe'}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
-															<path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-														</svg>
-														<div class="flex-1 min-w-0">
-															<div class="flex items-center gap-1.5 mb-0.5">
-																<div
-																	class="font-bold text-[0.7rem] tracking-tight"
-																	style="color: {replyCharacter ? replyCharacter.roleColor : '#e3e5e8'}"
-																>
-																	{replyCharacter ? replyCharacter.username : 'Unknown User'}
-																</div>
-																<svg class="w-3 h-3 opacity-50" style="color: {textColor}" fill="currentColor" viewBox="0 0 20 20">
-																	<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+												<div class="flex-1 min-w-0" style="margin-left: {showAvatars ? '0' : '0'}">
+													{#if replyMessage}
+														<div
+															class="mb-2 rounded-md border-l-[4px] pl-3 pr-3 py-2 cursor-pointer hover:bg-black/10 transition-all"
+															style="
+																border-color: {replyCharacter ? replyCharacter.roleColor : '#4f545c'};
+																background: linear-gradient(90deg, {replyCharacter ? `${replyCharacter.roleColor}15` : 'rgba(79, 84, 92, 0.15)'} 0%, rgba(79, 84, 92, 0.05) 100%);
+															"
+														>
+															<div class="flex items-start gap-2">
+																<svg class="w-3.5 h-3.5 shrink-0 mt-0.5 opacity-70" style="color: {replyCharacter ? replyCharacter.roleColor : '#b9bbbe'}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+																	<path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
 																</svg>
-															</div>
-															<div class="text-[0.7rem] leading-relaxed font-medium" style="color: {textColor}cc">
-																{replyPreview || 'Click to see original message'}
+																<div class="flex-1 min-w-0">
+																	<div class="flex items-center gap-1.5 mb-0.5">
+																		<div
+																			class="font-bold text-[0.7rem] tracking-tight"
+																			style="color: {replyCharacter ? replyCharacter.roleColor : '#e3e5e8'}"
+																		>
+																			{replyCharacter ? replyCharacter.username : 'Unknown User'}
+																		</div>
+																		<svg class="w-3 h-3 opacity-50" style="color: {textColor}" fill="currentColor" viewBox="0 0 20 20">
+																			<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+																		</svg>
+																	</div>
+																	<div class="text-[0.7rem] leading-relaxed font-medium" style="color: {textColor}cc">
+																		{replyPreview || 'Click to see original message'}
+																	</div>
+																</div>
 															</div>
 														</div>
-													</div>
-												</div>
-											{/if}
+													{/if}
 
 													<div
-														class="text-sm leading-relaxed break-words"
-														style="color: {textColor}e6"
+														class="leading-relaxed break-words"
+														style="color: {textColor}e6; font-size: {fontSize}px; font-weight: {fontWeightValue}; padding: {messagePadding / 8}px 0;"
 													>
 														{message.text}
 													</div>
@@ -268,24 +349,24 @@
 
 						<!-- Discord Mobile Input Bar -->
 						<div 
-							class="px-3 py-2 border-t flex-shrink-0"
-							style="background-color: {backgroundColor === '#36393f' ? '#2f3136' : `${backgroundColor}dd`}; border-top-color: {backgroundColor === '#36393f' ? '#202225' : `${backgroundColor}44`}"
+							class="px-3 py-2 border-t flex-shrink-0 backdrop-blur-sm"
+							style="background-color: {adaptedColors().header}; border-top-color: {adaptedColors().headerBorder}"
 						>
 							<div 
 								class="flex items-center gap-2 rounded-full px-3 py-2"
-								style="background-color: {backgroundColor === '#36393f' ? '#40444b' : `${backgroundColor}66`}"
+								style="background-color: {adaptedColors().input}"
 							>
 								<!-- Add Icon -->
-								<svg class="w-5 h-5 flex-shrink-0" style="color: {textColor}88" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<svg class="w-5 h-5 flex-shrink-0" style="color: {adaptedColors().textMuted}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
 								</svg>
 								<!-- Input Placeholder -->
-								<div class="flex-1 text-sm" style="color: {textColor}66">
+								<div class="flex-1 text-sm" style="color: {adaptedColors().textDim}">
 									Message #{channelName}
 								</div>
 								<!-- Emoji & More Icons -->
 								<div class="flex items-center gap-2">
-									<svg class="w-5 h-5" style="color: {textColor}88" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<svg class="w-5 h-5" style="color: {adaptedColors().textMuted}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
 									</svg>
 									<svg class="w-5 h-5" style="color: {textColor}88" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -313,10 +394,10 @@
 					</div>
 				{:else if previewState === 'loading'}
 					<!-- Loading State -->
-					<div class="h-full flex items-center justify-center relative" style="background-color: {backgroundColor}">
+					<div class="h-full flex items-center justify-center relative" style="background: {backgroundStyle()}; background-size: cover; background-position: center;">
 						<div
-							class="rounded-lg p-6 text-center max-w-xs"
-							style="background-color: {backgroundColor === '#36393f' ? '#2f3136' : `${backgroundColor}dd`}"
+							class="rounded-lg p-6 text-center max-w-xs backdrop-blur-sm"
+							style="background-color: {adaptedColors().header}"
 						>
 							<div
 								class="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin mx-auto mb-4"

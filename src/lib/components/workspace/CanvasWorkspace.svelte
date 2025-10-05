@@ -21,7 +21,8 @@
 		addMessageAtPosition, 
 		createConnection,
 		deleteElement,
-		deleteConnection
+		deleteConnection,
+		updateCharacter
 	} from '$lib/stores/appStore';
 	import { Button } from '$lib/components/ui/button';
 	import { Trash2 } from 'lucide-svelte/icons';
@@ -35,6 +36,7 @@
 		onCharacterMove: (id: string, position: { x: number; y: number }) => void;
 		onMessageMove: (id: string, position: { x: number; y: number }) => void;
 		onMessageTextUpdate: (id: string, text: string) => void;
+		onCharacterUsernameUpdate: (id: string, username: string) => void;
 		onElementSelect: (id: string | null) => void;
 		onAddMessage: (characterId: string) => void;
 		onCharacterEdit: (id: string) => void;
@@ -49,6 +51,7 @@
 		onCharacterMove,
 		onMessageMove,
 		onMessageTextUpdate,
+		onCharacterUsernameUpdate,
 		onElementSelect,
 		onAddMessage,
 		onCharacterEdit
@@ -70,6 +73,7 @@
 				isSelected: selectedElement === char.id,
 				onEdit: () => onCharacterEdit(char.id),
 				onAddMessage: () => onAddMessage(char.id),
+				onUsernameUpdate: onCharacterUsernameUpdate,
 				selectedTool
 			},
 			draggable: selectedTool === 'select'
