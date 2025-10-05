@@ -15,17 +15,18 @@ export interface Message {
 	position: { x: number; y: number };
 	timestamp: string;
 	rotation?: number;
+	replyTo?: string | null;
 }
 
 export interface Connection {
 	id: string;
 	from: string;
 	to: string;
-	type: 'assignment' | 'flow';
+	type: 'assignment' | 'flow' | 'reply';
 	color: string;
 	sourceHandle?: string;
 	targetHandle?: string;
 }
 
-export type Tool = 'select' | 'character' | 'message' | 'pan' | 'connect';
+export type Tool = 'select' | 'character' | 'message' | 'pan';
 export type PreviewState = 'preview' | 'loading' | 'video';

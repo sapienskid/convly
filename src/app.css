@@ -1,7 +1,5 @@
 @import "tailwindcss";
 
-@import "tw-animate-css";
-
 @custom-variant dark (&:is(.dark *));
 
 :root {
@@ -73,7 +71,7 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
-@theme inline {
+@theme {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

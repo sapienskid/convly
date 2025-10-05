@@ -1,363 +1,263 @@
 <script lang="ts">
-	import { SvelteFlow, Background, Controls, MiniMap } from '@xyflow/svelte';
-	import '@xyflow/svelte/dist/style.css';
-	
-	import { Card, CardContent } from '$lib/components/ui/card';
+	import CanvasWorkspace from '$lib/components/workspace/CanvasWorkspace.svelte';
+	import LeftSidebar from '$lib/components/workspace/LeftSidebar.svelte';
+	import RightPanel from '$lib/components/workspace/RightPanel.svelte';
+	import PhonePreview from '$lib/components/workspace/PhonePreview.svelte';
+	import BottomToolbar from '$lib/components/workspace/BottomToolbar.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Separator } from '$lib/components/ui/separator';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
+	import { ChevronRight, ChevronLeft } from 'lucide-svelte/icons';
 	
-	import { 
-		Edit, 
-		Copy, 
-		Users, 
-		MessageSquare, 
-		Plus, 
-		ChevronDown,
-		Type,
-		Layout,
-		Video,
-		Film,
-		Volume2,
-		Download,
-		Layers
-	} from 'lucide-svelte';
+	let isRightPanelCollapsed = $state(false);
 
-	// Sample node data
-	let nodes = $state([
-		{
-			id: 'speaker-1',
-			type: 'default',
-			position: { x: 50, y: 100 },
-			data: { 
-				label: 'Alex Chen',
-				type: 'speaker',
-				status: 'Ready to speak'
-			}
-		},
-		{
-			id: 'message-1',
-			type: 'default',
-			position: { x: 300, y: 50 },
-			data: { 
-				label: 'Hey everyone! Welcome to our Discord chat animation builder 🎉',
-				type: 'message',
-				timestamp: '03:37 PM',
-				user: 'Alex Chen'
-			}
-		},
-		{
-			id: 'speaker-2',
-			type: 'default',
-			position: { x: 50, y: 300 },
-			data: { 
-				label: 'Sarah Wilson',
-				type: 'speaker',
-				status: 'Ready to speak'
-			}
-		},
-		{
-			id: 'message-2',
-			type: 'default',
-			position: { x: 300, y: 250 },
-			data: { 
-				label: 'This looks amazing! Can\'t wait to create some cool animations 🎨',
-				type: 'message',
-				timestamp: '03:37 PM',
-				user: 'Sarah Wilson'
+	import {
+		characters,
+		messages,
+		connections,
+		selectedTool,
+		selectedElement,
+		editingCharacter,
+		previewState,
+		isGenerating,
+		customizeSettings,
+		updateCharacterPosition,
+		updateMessagePosition,
+		updateMessageText,
+		addMessageForCharacter,
+		handleGenerateVideo,
+		handleApplyCustomization,
+		deleteElement,
+		addCharacter,
+		addMessage
+	} from '$lib/stores/appStore';
+	import type { Tool } from '$lib/types';
+
+	function handleToolSelect(tool: Tool) {
+		selectedTool.set(tool);
+		// Deselect element when switching tools
+		if (tool !== 'select') {
+			selectedElement.set(null);
+		}
+	}
+
+	function handleKeyboardShortcut(event: KeyboardEvent) {
+		// Ignore if typing in an input/textarea
+		if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+			return;
+		}
+
+		// Tool shortcuts
+		switch (event.key.toLowerCase()) {
+			case 'v':
+				event.preventDefault();
+				handleToolSelect('select');
+				break;
+			case 'h':
+				event.preventDefault();
+				handleToolSelect('pan');
+				break;
+			case 'c':
+				event.preventDefault();
+				handleToolSelect('character');
+				break;
+			case 'm':
+				event.preventDefault();
+				handleToolSelect('message');
+				break;
+			case 'escape':
+				event.preventDefault();
+				selectedElement.set(null);
+				handleToolSelect('select');
+				break;
+		}
+		
+		// Delete shortcut
+		if (event.key === 'Delete' || event.key === 'Backspace') {
+			if ($selectedElement && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) {
+				event.preventDefault();
+				handleDelete();
 			}
 		}
-	]);
-
-	let edges = $state([
-		{ id: 'e1', source: 'speaker-1', target: 'message-1' },
-		{ id: 'e2', source: 'speaker-2', target: 'message-2' }
-	]);
-
-	// Phone preview data
-	let serverName = $state('My Discord Server');
-	let channelName = $state('general');
-	let chatTopic = $state('General Chat');
-	
-	let messages = $state([
-		{
-			id: 1,
-			user: 'Sarah Wilson',
-			avatar: 'SW',
-			color: 'bg-purple-500',
-			timestamp: '03:37 PM',
-			content: 'This looks amazing! Can\'t wait to create some cool animations 🎨'
-		},
-		{
-			id: 2,
-			user: 'Alex Chen',
-			avatar: 'AC',
-			color: 'bg-blue-500',
-			timestamp: '03:37 PM',
-			content: 'Hey everyone! Welcome to our Discord chat animation builder 🎉'
+		
+		// Duplicate shortcut (Ctrl/Cmd + D)
+		if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
+			if ($selectedElement) {
+				event.preventDefault();
+				handleDuplicate();
+			}
 		}
-	]);
+	}
+
+	function handleElementSelect(id: string | null) {
+		selectedElement.set(id);
+	}
+
+	function handleCharacterEdit(id: string) {
+		editingCharacter.set(id);
+	}
+
+	function handleDelete() {
+		const element = $selectedElement;
+		if (!element) return;
+		
+		const char = $characters.find(c => c.id === element);
+		const msg = $messages.find(m => m.id === element);
+		
+		if (char) {
+			deleteElement(element, 'character');
+		} else if (msg) {
+			deleteElement(element, 'message');
+		}
+		selectedElement.set(null);
+	}
+
+	function handleDuplicate() {
+		const element = $selectedElement;
+		if (!element) return;
+		
+		const char = $characters.find(c => c.id === element);
+		const msg = $messages.find(m => m.id === element);
+		
+		if (char) {
+			const newChar = {
+				username: char.username + ' (Copy)',
+				avatar: char.avatar,
+				roleColor: char.roleColor,
+				position: { x: char.position.x + 50, y: char.position.y + 50 }
+			};
+			const newId = addCharacter(newChar);
+			selectedElement.set(newId);
+		} else if (msg) {
+			const newMsg = {
+				characterId: msg.characterId,
+				text: msg.text,
+				position: { x: msg.position.x + 50, y: msg.position.y + 50 },
+				timestamp: new Date().toISOString()
+			};
+			const newId = addMessage(newMsg);
+			selectedElement.set(newId);
+		}
+	}
 </script>
 
-<div class="flex h-screen w-full overflow-hidden bg-background">
-	<!-- Left Panel - Flow Editor -->
-	<div class="flex flex-1 flex-col border-r border-border">
-		<!-- Top Toolbar -->
-		<div class="flex items-center gap-2 border-b border-border bg-card px-4 py-2">
-			<div class="flex items-center gap-2">
-				<Button variant="ghost" size="icon">
-					<Users class="size-4" />
-				</Button>
-				<Badge variant="secondary" class="gap-1">
-					<Users class="size-3" />
-					2
-				</Badge>
-			</div>
-			<div class="flex items-center gap-2">
-				<Button variant="ghost" size="icon">
-					<MessageSquare class="size-4" />
-				</Button>
-				<Badge variant="secondary" class="gap-1">
-					<MessageSquare class="size-3" />
-					2
-				</Badge>
-			</div>
-			<div class="flex items-center gap-2">
-				<Button variant="ghost" size="icon">
-					<Copy class="size-4" />
-				</Button>
-				<Badge variant="secondary">3</Badge>
-			</div>
-		</div>
+<svelte:window onkeydown={handleKeyboardShortcut} />
 
-		<!-- Flow Canvas -->
-		<div class="relative flex-1">
-			<SvelteFlow {nodes} {edges} fitView>
-				<Background />
-				<Controls />
-				<MiniMap />
-			</SvelteFlow>
+<div class="flex h-screen w-full overflow-hidden bg-background">
+	<!-- Left Sidebar -->
+	<LeftSidebar
+		selectedTool={$selectedTool}
+		onToolSelect={handleToolSelect}
+		selectedElement={$selectedElement}
+		elementCount={{
+			characters: $characters.length,
+			messages: $messages.length,
+			connections: $connections.length
+		}}
+	/>
+
+	<!-- Main Content Area - Canvas Workspace -->
+	<div class="flex flex-1 flex-col border-r border-border bg-background">
+		<div class="flex-1">
+			<CanvasWorkspace
+				characters={$characters}
+				messages={$messages}
+				connections={$connections}
+				selectedTool={$selectedTool}
+				selectedElement={$selectedElement}
+				onCharacterMove={updateCharacterPosition}
+				onMessageMove={updateMessagePosition}
+				onMessageTextUpdate={updateMessageText}
+				onElementSelect={handleElementSelect}
+				onAddMessage={addMessageForCharacter}
+				onCharacterEdit={handleCharacterEdit}
+			/>
 		</div>
 
 		<!-- Bottom Toolbar -->
-		<div class="flex items-center justify-between border-t border-border bg-card px-4 py-2">
-			<div class="flex gap-2">
-				<Button variant="ghost" size="icon">
-					<Users class="size-4" />
-				</Button>
-				<Button variant="ghost" size="icon">
-					<MessageSquare class="size-4" />
-				</Button>
-				<Button variant="ghost" size="icon">
-					<Edit class="size-4" />
-				</Button>
-				<Button variant="ghost" size="icon">
-					<Copy class="size-4" />
-				</Button>
+		<BottomToolbar
+			selectedTool={$selectedTool}
+			onToolSelect={handleToolSelect}
+			selectedElement={$selectedElement}
+			elementCount={{
+				characters: $characters.length,
+				messages: $messages.length,
+				connections: $connections.length
+			}}
+			onDelete={handleDelete}
+			onDuplicate={handleDuplicate}
+		/>
+	</div>
+
+	<!-- Preview Panel -->
+	<div class="w-[400px] flex-shrink-0 border-r border-border bg-gradient-to-b from-card to-card/50">
+		<div class="flex h-full flex-col">
+			<!-- Enhanced Header -->
+			<div class="border-b border-border bg-card/80 backdrop-blur-sm p-5">
+				<div class="flex items-center justify-between mb-3">
+					<div class="flex items-center gap-3">
+						<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+							</svg>
+						</div>
+						<div>
+							<h2 class="text-lg font-bold">Live Preview</h2>
+							<p class="text-xs text-muted-foreground">Real-time visualization</p>
+						</div>
+					</div>
+				</div>
+				<!-- Stats -->
+				<div class="flex items-center gap-4 text-xs">
+					<div class="flex items-center gap-1.5">
+						<div class="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+						<span class="text-muted-foreground">{$characters.length} Characters</span>
+					</div>
+					<div class="flex items-center gap-1.5">
+						<div class="h-2 w-2 rounded-full bg-blue-500"></div>
+						<span class="text-muted-foreground">{$messages.length} Messages</span>
+					</div>
+				</div>
 			</div>
-			<div class="flex gap-2">
-				<Button variant="outline" size="icon">
-					<Plus class="size-4" />
-				</Button>
-				<Button variant="outline" size="icon">
-					<Plus class="size-4" />
-				</Button>
+			<div class="flex flex-1 items-center justify-center p-8 bg-gradient-to-b from-transparent to-accent/5">
+				<PhonePreview
+					characters={$characters}
+					messages={$messages}
+					connections={$connections}
+					previewState={$previewState}
+					isGenerating={$isGenerating}
+					customizeSettings={$customizeSettings}
+				/>
 			</div>
 		</div>
 	</div>
 
-	<!-- Right Panel - Phone Preview -->
-	<div class="flex w-[450px] flex-col border-r border-border bg-muted/30 p-6">
-		<div class="mb-4 flex items-center justify-between">
-			<h2 class="text-lg font-semibold">Preview</h2>
-			<p class="text-sm text-muted-foreground">Current chat visualization</p>
-		</div>
+	<!-- Right Panel - Customization -->
+	<div class="relative flex-shrink-0">
+		<!-- Toggle Button -->
+		<Button
+			variant="ghost"
+			size="icon"
+			class="absolute left-0 top-1/2 z-10 h-12 w-6 -translate-x-full -translate-y-1/2 rounded-l-md rounded-r-none border border-r-0 border-border bg-card hover:bg-accent"
+			onclick={() => isRightPanelCollapsed = !isRightPanelCollapsed}
+		>
+			{#if isRightPanelCollapsed}
+				<ChevronLeft class="h-4 w-4" />
+			{:else}
+				<ChevronRight class="h-4 w-4" />
+			{/if}
+		</Button>
 
-		<!-- Phone Mockup -->
-		<div class="mx-auto flex flex-1 items-center justify-center">
-			<div class="relative h-[600px] w-[320px] overflow-hidden rounded-[3rem] border-[14px] border-foreground bg-background shadow-2xl">
-				<!-- Status Bar -->
-				<div class="flex items-center justify-between bg-background px-6 py-2">
-					<span class="text-xs font-semibold">9:41</span>
-					<div class="flex items-center gap-1">
-						<div class="h-2 w-2 rounded-full bg-foreground"></div>
-						<div class="h-2 w-2 rounded-full bg-foreground"></div>
-						<div class="h-2 w-2 rounded-full bg-foreground"></div>
-					</div>
-				</div>
-
-				<!-- Channel Header -->
-				<div class="border-b border-border bg-card px-4 py-3">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-2">
-							<div class="size-2 rounded-full bg-green-500"></div>
-							<span class="font-semibold">{channelName}</span>
-						</div>
-						<ChevronDown class="size-4 text-muted-foreground" />
-					</div>
-				</div>
-
-				<!-- Messages -->
-				<ScrollArea class="h-[calc(100%-8rem)] px-4 py-2">
-					{#each messages as message (message.id)}
-						<div class="mb-4 flex gap-3">
-							<Avatar class="size-10">
-								<AvatarFallback class={message.color}>
-									{message.avatar}
-								</AvatarFallback>
-							</Avatar>
-							<div class="flex-1">
-								<div class="flex items-baseline gap-2">
-									<span class="text-sm font-semibold">{message.user}</span>
-									<span class="text-xs text-muted-foreground">{message.timestamp}</span>
-								</div>
-								<p class="mt-1 text-sm">{message.content}</p>
-							</div>
-						</div>
-					{/each}
-				</ScrollArea>
-
-				<!-- Message Input -->
-				<div class="absolute bottom-0 left-0 right-0 border-t border-border bg-card px-4 py-3">
-					<div class="text-xs text-muted-foreground">Message #{channelName}</div>
-				</div>
-			</div>
-		</div>
-	</div>
-
-	<!-- Far Right Panel - Customization -->
-	<div class="flex w-[380px] flex-col bg-card">
-		<ScrollArea class="flex-1 p-6">
-			<div class="space-y-6">
-				<!-- Chat Room Section -->
-				<div>
-					<div class="mb-4 flex items-center justify-between">
-						<div class="flex items-center gap-2">
-							<MessageSquare class="size-4" />
-							<span class="font-semibold">Chat Room</span>
-						</div>
-						<ChevronDown class="size-4" />
-					</div>
-
-					<div class="space-y-4">
-						<div>
-							<Label for="server-name" class="text-sm">Server Name</Label>
-							<Input id="server-name" bind:value={serverName} class="mt-1.5" />
-						</div>
-						<div>
-							<Label for="channel-name" class="text-sm">Channel Name</Label>
-							<Input id="channel-name" bind:value={channelName} class="mt-1.5" />
-						</div>
-						<div>
-							<Label for="chat-topic" class="text-sm">Chat Topic</Label>
-							<Input id="chat-topic" bind:value={chatTopic} class="mt-1.5" />
-						</div>
-					</div>
-				</div>
-
-				<Separator />
-
-				<!-- Typography Section -->
-				<div>
-					<button class="flex w-full items-center justify-between py-2">
-						<div class="flex items-center gap-2">
-							<Type class="size-4" />
-							<span class="font-semibold">Typography</span>
-						</div>
-						<ChevronDown class="size-4" />
-					</button>
-				</div>
-
-				<Separator />
-
-				<!-- Layout Section -->
-				<div>
-					<button class="flex w-full items-center justify-between py-2">
-						<div class="flex items-center gap-2">
-							<Layout class="size-4" />
-							<span class="font-semibold">Layout</span>
-						</div>
-						<ChevronDown class="size-4" />
-					</button>
-				</div>
-
-				<Separator />
-
-				<!-- Video Quality Section -->
-				<div>
-					<button class="flex w-full items-center justify-between py-2">
-						<div class="flex items-center gap-2">
-							<Video class="size-4" />
-							<span class="font-semibold">Video Quality</span>
-						</div>
-						<ChevronDown class="size-4" />
-					</button>
-				</div>
-
-				<Separator />
-
-				<!-- Animation Section -->
-				<div>
-					<button class="flex w-full items-center justify-between py-2">
-						<div class="flex items-center gap-2">
-							<Film class="size-4" />
-							<span class="font-semibold">Animation</span>
-						</div>
-						<ChevronDown class="size-4" />
-					</button>
-				</div>
-
-				<Separator />
-
-				<!-- Audio Section -->
-				<div>
-					<button class="flex w-full items-center justify-between py-2">
-						<div class="flex items-center gap-2">
-							<Volume2 class="size-4" />
-							<span class="font-semibold">Audio</span>
-						</div>
-						<ChevronDown class="size-4" />
-					</button>
-				</div>
-
-				<Separator />
-
-				<!-- Export Format Section -->
-				<div>
-					<button class="flex w-full items-center justify-between py-2">
-						<div class="flex items-center gap-2">
-							<Download class="size-4" />
-							<span class="font-semibold">Export Format</span>
-						</div>
-						<ChevronDown class="size-4" />
-					</button>
-				</div>
-
-				<Separator />
-
-				<!-- Templates Section -->
-				<div>
-					<button class="flex w-full items-center justify-between py-2">
-						<div class="flex items-center gap-2">
-							<Layers class="size-4" />
-							<span class="font-semibold">Templates</span>
-						</div>
-						<ChevronDown class="size-4" />
-					</button>
-				</div>
-			</div>
-		</ScrollArea>
-
-		<!-- Save Button -->
-		<div class="border-t border-border p-4">
-			<Button class="w-full bg-green-600 hover:bg-green-700">
-				<Download class="mr-2 size-4" />
-				Save Project
-			</Button>
+		<!-- Panel Content -->
+		<div class="{isRightPanelCollapsed ? 'w-0' : 'w-80'} overflow-hidden transition-all duration-300">
+			<RightPanel
+				characters={$characters}
+				messages={$messages}
+				connections={$connections}
+				previewState={$previewState}
+				isGenerating={$isGenerating}
+				customizeSettings={$customizeSettings}
+				onGenerateVideo={handleGenerateVideo}
+				onCustomizationApply={handleApplyCustomization}
+			/>
 		</div>
 	</div>
 </div>

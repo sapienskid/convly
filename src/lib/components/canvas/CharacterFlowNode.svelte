@@ -34,64 +34,31 @@
 	};
 
 	const isConnectMode = $derived(data.selectedTool === 'connect');
-	const handleOpacity = $derived(isConnectMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100');
+	const isSelectMode = $derived(data.selectedTool === 'select');
+	const handleVisibility = $derived(
+		isConnectMode
+			? 'opacity-100'
+			: isSelectMode
+				? 'opacity-80 group-hover:opacity-100'
+				: 'opacity-60 group-hover:opacity-90'
+	);
 </script>
 
-<div class="relative group {isConnectMode ? 'cursor-crosshair' : ''}">
-	<!-- Connection Handles - Top -->
-	<Handle
-		type="source"
-		position={Position.Top}
-		id="top-source"
-		class="!w-8 !h-8 !bg-white !border-3 !border-blue-500 shadow-xl hover:!scale-110 transition-all duration-200 !rounded-full {handleOpacity} z-10"
-	/>
-	<Handle
-		type="target"
-		position={Position.Top}
-		id="top-target"
-		class="!w-8 !h-8 !bg-white !border-3 !border-green-500 shadow-xl hover:!scale-110 transition-all duration-200 !rounded-full {handleOpacity} z-10"
-	/>
-
-	<!-- Connection Handles - Right -->
+<div class="relative group {isConnectMode || isSelectMode ? 'cursor-pointer' : ''}">
+	<!-- Connection Handles - Source on right, Target on left -->
 	<Handle
 		type="source"
 		position={Position.Right}
-		id="right-source"
-		class="!w-8 !h-8 !bg-white !border-3 !border-blue-500 shadow-xl hover:!scale-110 transition-all duration-200 !rounded-full {handleOpacity} z-10"
-	/>
-	<Handle
-		type="target"
-		position={Position.Right}
-		id="right-target"
-		class="!w-8 !h-8 !bg-white !border-3 !border-green-500 shadow-xl hover:!scale-110 transition-all duration-200 !rounded-full {handleOpacity} z-10"
-	/>
-
-	<!-- Connection Handles - Bottom -->
-	<Handle
-		type="source"
-		position={Position.Bottom}
-		id="bottom-source"
-		class="!w-8 !h-8 !bg-white !border-3 !border-blue-500 shadow-xl hover:!scale-110 transition-all duration-200 !rounded-full {handleOpacity} z-10"
-	/>
-	<Handle
-		type="target"
-		position={Position.Bottom}
-		id="bottom-target"
-		class="!w-8 !h-8 !bg-white !border-3 !border-green-500 shadow-xl hover:!scale-110 transition-all duration-200 !rounded-full {handleOpacity} z-10"
-	/>
-
-	<!-- Connection Handles - Left -->
-	<Handle
-		type="source"
-		position={Position.Left}
-		id="left-source"
-		class="!w-8 !h-8 !bg-white !border-3 !border-blue-500 shadow-xl hover:!scale-110 transition-all duration-200 !rounded-full {handleOpacity} z-10"
+		id="source"
+		class="!w-4 !h-4 !bg-blue-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+		isConnectable={true}
 	/>
 	<Handle
 		type="target"
 		position={Position.Left}
-		id="left-target"
-		class="!w-8 !h-8 !bg-white !border-3 !border-green-500 shadow-xl hover:!scale-110 transition-all duration-200 !rounded-full {handleOpacity} z-10"
+		id="target"
+		class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+		isConnectable={true}
 	/>
 
 	<!-- Character Node Card -->

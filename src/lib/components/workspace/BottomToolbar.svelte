@@ -1,8 +1,7 @@
 <script lang="ts">
 	import type { Tool } from '$lib/types';
-	import type { Component } from 'svelte';
+	import type { ComponentType } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { Badge } from '$lib/components/ui/badge';
 	import { Separator } from '$lib/components/ui/separator';
 	import MousePointer2 from 'lucide-svelte/icons/mouse-pointer-2';
 	import Hand from 'lucide-svelte/icons/hand';
@@ -21,60 +20,94 @@
 			messages: number;
 			connections: number;
 		};
+		onDelete?: () => void;
+		onDuplicate?: () => void;
 	}
 
-	let { selectedTool, onToolSelect, selectedElement, elementCount }: Props = $props();
+	let {
+		selectedTool,
+		onToolSelect,
+		selectedElement,
+		elementCount,
+		onDelete,
+		onDuplicate
+	}: Props = $props();
 
-	const tools: Array<{ id: Tool; icon: Component; label: string; shortcut: string }> = [
+	function handleDelete() {
+		if (selectedElement && onDelete) {
+			onDelete();
+		}
+	}
+
+	function handleDuplicate() {
+		if (selectedElement && onDuplicate) {
+			onDuplicate();
+		}
+	}
+
+	const tools: Array<{ id: Tool; icon: ComponentType; label: string; shortcut: string }> = [
 		{ id: 'select', icon: MousePointer2, label: 'Select', shortcut: 'V' },
 		{ id: 'pan', icon: Hand, label: 'Pan', shortcut: 'H' },
 		{ id: 'character', icon: User, label: 'Character', shortcut: 'C' },
-		{ id: 'message', icon: MessageSquare, label: 'Message', shortcut: 'M' },
-		{ id: 'connect', icon: Link2, label: 'Connect', shortcut: 'L' }
+		{ id: 'message', icon: MessageSquare, label: 'Message', shortcut: 'M' }
 	];
 </script>
 
-<div class="border-t border-border bg-card px-4 py-2">
+<div class="border-t border-border bg-card px-4 py-3">
 	<div class="flex items-center justify-between">
-		<!-- Left: Tools -->
-		<div class="flex items-center gap-1">
-			{#each tools as tool}
-				<Button
-					variant={selectedTool === tool.id ? 'default' : 'ghost'}
-					size="sm"
-					onclick={() => onToolSelect(tool.id)}
-					class="gap-2"
-					title="{tool.label} ({tool.shortcut})"
-				>
-					{@const Icon = tool.icon}
-					<Icon class="size-4" />
-					<span class="hidden sm:inline">{tool.label}</span>
-				</Button>
-			{/each}
+		<!-- Left: Selection Info -->
+		<div class="flex items-center gap-3">
+			{#if selectedElement}
+				<div class="text-sm text-muted-foreground">
+					<span class="font-medium text-foreground">Selected:</span>
+					{selectedElement.startsWith('char') ? 'Character' : 'Message'}
+				</div>
+			{:else}
+				<div class="text-sm text-muted-foreground">
+					No selection
+				</div>
+			{/if}
 		</div>
 
 		<!-- Center: Element Counts -->
-		<div class="flex items-center gap-3">
-			<div class="flex items-center gap-1.5">
+		<div class="flex items-center gap-4">
+			<div class="flex items-center gap-2">
 				<User class="size-4 text-muted-foreground" />
-				<Badge variant="secondary">{elementCount.characters}</Badge>
+				<span class="text-sm font-medium">{elementCount.characters}</span>
+				<span class="text-xs text-muted-foreground">Characters</span>
 			</div>
-			<div class="flex items-center gap-1.5">
+			<div class="flex items-center gap-2">
 				<MessageSquare class="size-4 text-muted-foreground" />
-				<Badge variant="secondary">{elementCount.messages}</Badge>
+				<span class="text-sm font-medium">{elementCount.messages}</span>
+				<span class="text-xs text-muted-foreground">Messages</span>
 			</div>
-			<div class="flex items-center gap-1.5">
+			<div class="flex items-center gap-2">
 				<Link2 class="size-4 text-muted-foreground" />
-				<Badge variant="secondary">{elementCount.connections}</Badge>
+				<span class="text-sm font-medium">{elementCount.connections}</span>
+				<span class="text-xs text-muted-foreground">Connections</span>
 			</div>
 		</div>
 
 		<!-- Right: Quick Actions -->
 		<div class="flex items-center gap-1">
-			<Button variant="ghost" size="sm" disabled={!selectedElement} title="Copy">
+			<Button 
+				variant="ghost" 
+				size="sm" 
+				disabled={!selectedElement} 
+				title="Duplicate (Ctrl+D)"
+				onclick={handleDuplicate}
+				class="hover:bg-blue-50 hover:text-blue-600"
+			>
 				<Copy class="size-4" />
 			</Button>
-			<Button variant="ghost" size="sm" disabled={!selectedElement} title="Delete">
+			<Button 
+				variant="ghost" 
+				size="sm" 
+				disabled={!selectedElement} 
+				title="Delete (Del)"
+				onclick={handleDelete}
+				class="hover:bg-destructive/10 hover:text-destructive"
+			>
 				<Trash2 class="size-4" />
 			</Button>
 		</div>
