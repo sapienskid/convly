@@ -329,12 +329,12 @@
 													<div
 														class="leading-relaxed break-words"
 														style="color: {textColor}e6; font-size: {fontSize}px; font-weight: {fontWeightValue}; padding: {messagePadding / 8}px 0;"
-													>
-														{rendered.text}
-														{#if rendered.isTyping}
-															<span class="inline-block ml-0.5 h-[1em] align-[-0.1em] w-[1px] animate-pulse" style="background-color: {textColor}b3"></span>
-														{/if}
-													</div>
+														>
+															{rendered.text}
+															{#if rendered.isTyping}
+																<span class="inline-block ml-0.5 h-[1em] align-[-0.1em] w-[1px]" style="background-color: {textColor}b3; opacity: {Math.abs(Math.cos(currentTime * Math.PI * 3))};"></span>
+															{/if}
+														</div>
 												</div>
 											</div>
 										{:else}
@@ -386,12 +386,12 @@
 													<div
 														class="leading-relaxed break-words"
 														style="color: {textColor}e6; font-size: {fontSize}px; font-weight: {fontWeightValue}; padding: {messagePadding / 8}px 0;"
-													>
-														{rendered.text}
-														{#if rendered.isTyping}
-															<span class="inline-block ml-0.5 h-[1em] align-[-0.1em] w-[1px] animate-pulse" style="background-color: {textColor}b3"></span>
-														{/if}
-													</div>
+														>
+															{rendered.text}
+															{#if rendered.isTyping}
+																<span class="inline-block ml-0.5 h-[1em] align-[-0.1em] w-[1px]" style="background-color: {textColor}b3; opacity: {Math.abs(Math.cos(currentTime * Math.PI * 3))};"></span>
+															{/if}
+														</div>
 												</div>
 											</div>
 										{/if}
@@ -409,13 +409,13 @@
 														{typingIndicatorCharacter.username.slice(0, 2).toUpperCase()}
 													</AvatarFallback>
 												</Avatar>
-											{/if}
-											<div class="rounded-2xl px-3 py-2 inline-flex items-center gap-1.5" style="background-color: {adaptedColors().input}">
-												<span class="h-1.5 w-1.5 rounded-full animate-bounce" style="background-color: {textColor}99; animation-delay: 0ms;"></span>
-												<span class="h-1.5 w-1.5 rounded-full animate-bounce" style="background-color: {textColor}99; animation-delay: 120ms;"></span>
-												<span class="h-1.5 w-1.5 rounded-full animate-bounce" style="background-color: {textColor}99; animation-delay: 240ms;"></span>
+												{/if}
+												<div class="rounded-2xl px-3 py-2 inline-flex items-center gap-1.5" style="background-color: {adaptedColors().input}">
+													<span class="h-1.5 w-1.5 rounded-full" style="background-color: {textColor}99; transform: translateY({Math.sin((currentTime * 8) + 0) * -2.5 + 1.25}px);"></span>
+													<span class="h-1.5 w-1.5 rounded-full" style="background-color: {textColor}99; transform: translateY({Math.sin((currentTime * 8) - 1.5) * -2.5 + 1.25}px);"></span>
+													<span class="h-1.5 w-1.5 rounded-full" style="background-color: {textColor}99; transform: translateY({Math.sin((currentTime * 8) - 3.0) * -2.5 + 1.25}px);"></span>
+												</div>
 											</div>
-										</div>
 									{/if}
 								{/if}
 							</div>

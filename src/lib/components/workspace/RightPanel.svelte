@@ -6,6 +6,7 @@
 		CustomizationSettings,
 		CodecSetting
 	} from '$lib/types';
+	import type { ExportProgress } from '$lib/utils/videoExport';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -28,7 +29,9 @@
 		Play,
 		Pause,
 		Music2,
-		Download
+		Download,
+		X,
+		Loader2
 	} from 'lucide-svelte/icons';
 	import { buildMessageAnimationTimeline } from '$lib/utils/animationTimeline';
 
@@ -44,10 +47,13 @@
 		musicTrackName: string;
 		hasMusicTrack: boolean;
 		isMusicPlaying: boolean;
+		isExporting?: boolean;
+		exportProgress?: ExportProgress | null;
 		onPreviewAnimation: () => void;
 		onMusicUpload: (file: File) => void;
 		onMusicToggle: () => void;
 		onExportVideo: () => void;
+		onCancelExport?: () => void;
 		onCustomizationApply: (settings: Partial<CustomizationSettings>) => void;
 	}
 
@@ -61,10 +67,13 @@
 		musicTrackName,
 		hasMusicTrack,
 		isMusicPlaying,
+		isExporting = false,
+		exportProgress = null,
 		onPreviewAnimation,
 		onMusicUpload,
 		onMusicToggle,
 		onExportVideo,
+		onCancelExport,
 		onCustomizationApply
 	}: Props = $props();
 
@@ -823,27 +832,62 @@
 				variant="outline"
 				class="w-full"
 				onclick={onPreviewAnimation}
-				disabled={isGenerating || messages.length === 0}
+				disabled={isGenerating || isExporting || messages.length === 0}
 				size="lg"
 			>
 				<Play class="mr-2 size-4" />
 				<span class="font-semibold">{previewState === 'video' ? 'Replay' : 'Preview'}</span>
 			</Button>
 
-			<Button
-				class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg transition-all duration-200 hover:from-purple-700 hover:to-pink-700 hover:shadow-xl"
-				onclick={onExportVideo}
-				disabled={isGenerating}
-				size="lg"
-			>
-				{#if isGenerating}
-					<div class="mr-2 h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-					<span>Exporting...</span>
-				{:else}
+			{#if isExporting && exportProgress}
+				<div class="w-full space-y-3">
+					<div class="flex items-center justify-between text-sm">
+						<span class="font-medium text-muted-foreground">
+							{#if exportProgress.phase === 'initializing'}
+								Initializing...
+							{:else if exportProgress.phase === 'rendering'}
+								Rendering frames...
+							{:else if exportProgress.phase === 'finalizing'}
+								Finalizing...
+							{:else if exportProgress.phase === 'complete'}
+								Complete!
+							{:else}
+								Exporting...
+							{/if}
+						</span>
+						<span class="font-semibold">{exportProgress.percent}%</span>
+					</div>
+					
+					<div class="h-2 w-full overflow-hidden rounded-full bg-secondary">
+						<div 
+							class="h-full bg-gradient-to-r from-purple-600 to-pink-600 transition-all duration-300"
+							style="width: {exportProgress.percent}%"
+						></div>
+					</div>
+
+					{#if exportProgress.phase !== 'complete'}
+						<Button
+							variant="outline"
+							class="w-full"
+							onclick={() => onCancelExport?.()}
+							size="sm"
+						>
+							<X class="mr-2 size-4" />
+							Cancel Export
+						</Button>
+					{/if}
+				</div>
+			{:else}
+				<Button
+					class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg transition-all duration-200 hover:from-purple-700 hover:to-pink-700 hover:shadow-xl"
+					onclick={onExportVideo}
+					disabled={isGenerating || messages.length === 0}
+					size="lg"
+				>
 					<Download class="mr-2 size-5" />
-					<span class="font-semibold">Export</span>
-				{/if}
-			</Button>
+					<span class="font-semibold">Export Video</span>
+				</Button>
+			{/if}
 		</div>
 	</div>
 </div>

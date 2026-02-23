@@ -8,9 +8,10 @@
 	import CharacterEditor from '$lib/components/workspace/CharacterEditor.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { ChevronRight, ChevronLeft } from 'lucide-svelte/icons';
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { initializeStore, isInitialized } from '$lib/stores/appStore';
 	import { buildMessageAnimationTimeline } from '$lib/utils/animationTimeline';
+	import { VideoExporter, downloadVideo, getResolutionPreset, type ExportProgress } from '$lib/utils/videoExport';
 	
 	let isRightPanelCollapsed = $state(false);
 	let editorView = $state<'graph' | 'json'>('graph');
@@ -32,15 +33,24 @@
 		buildMessageAnimationTimeline($messages, $connections, $customizeSettings)
 	);
 	const videoDuration = $derived(animationTimeline.totalDuration);
+	const normalizedAnimationSpeed = $derived.by(() => {
+		const speed = Number($customizeSettings.animationSpeed);
+		if (!Number.isFinite(speed)) return 1;
+		return Math.min(2, Math.max(0.5, speed));
+	});
+	const normalizedFps = $derived.by(() => {
+		const fps = Math.round(Number($customizeSettings.fps));
+		if (!Number.isFinite(fps)) return 30;
+		return Math.min(60, Math.max(24, fps));
+	});
 	let lastPreviewMode = $state<'preview' | 'loading' | 'video'>('preview');
 	const NOTIFICATION_EPSILON = 0.0001;
 
-	function getResolutionPreset(resolution: string) {
-		const presets: Record<string, { width: number; height: number; aspectRatio: string; platform: string }> = {
-			'vertical-1080x1920': { width: 1080, height: 1920, aspectRatio: '9:16', platform: 'vertical' }
-		};
-		return presets[resolution] ?? presets['vertical-1080x1920'];
-	}
+	// Video Export State
+	let videoExporter = $state<VideoExporter | null>(null);
+	let isExporting = $state(false);
+	let exportProgress = $state<ExportProgress | null>(null);
+	let livePreviewCaptureElement = $state<HTMLDivElement | null>(null);
 
 	function resetNotificationCursor(timeSeconds: number) {
 		if (timeSeconds <= NOTIFICATION_EPSILON) {
@@ -88,12 +98,16 @@
 
 		if (nextMode === 'video') {
 			videoCurrentTime = 0;
-			isVideoPlaying = videoDuration > 0;
+			isVideoPlaying = !isExporting && videoDuration > 0;
 			resetNotificationCursor(0);
 			if (backgroundMusicAudio) {
 				backgroundMusicAudio.currentTime = 0;
 			}
-			isMusicPlaying = isVideoPlaying && Boolean(musicTrackUrl) && ($customizeSettings.musicEnabled ?? true);
+			isMusicPlaying =
+				!isExporting &&
+				isVideoPlaying &&
+				Boolean(musicTrackUrl) &&
+				($customizeSettings.musicEnabled ?? true);
 		} else {
 			isVideoPlaying = false;
 			isMusicPlaying = false;
@@ -154,8 +168,8 @@
 	$effect(() => {
 		if (!isVideoPlaying || $previewState !== 'video' || videoDuration <= 0) return;
 
-		const fps = Math.max($customizeSettings.fps, 1);
-		const speed = Math.max($customizeSettings.animationSpeed, 0.1);
+		const fps = normalizedFps;
+		const speed = normalizedAnimationSpeed;
 		const frameDurationMs = 1000 / fps;
 		const stepSeconds = frameDurationMs / 1000;
 		let frameId = 0;
@@ -250,13 +264,142 @@
 	}
 
 	function handleExportVideo() {
-		if (videoDuration <= 0) return;
-		previewState.set('video');
-		isVideoPlaying = false;
-		isMusicPlaying = false;
-		videoCurrentTime = 0;
-		resetNotificationCursor(0);
-		handleVideoDownload();
+		if (videoDuration <= 0 || isExporting) return;
+		startVideoExport();
+	}
+
+	async function waitForLivePreviewElement(timeoutMs = 5000): Promise<HTMLDivElement> {
+		const start = performance.now();
+
+		while (!livePreviewCaptureElement) {
+			await tick();
+			await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+			if (performance.now() - start >= timeoutMs) {
+				throw new Error('Live preview capture element failed to initialize');
+			}
+		}
+
+		return livePreviewCaptureElement;
+	}
+
+	async function startVideoExport() {
+		if (isExporting) return;
+
+		const previousPreviewState = $previewState;
+		const previousCurrentTime = videoCurrentTime;
+		const previousIsVideoPlaying = isVideoPlaying;
+		const previousIsMusicPlaying = isMusicPlaying;
+
+		isExporting = true;
+		exportProgress = {
+			phase: 'initializing',
+			percent: 0,
+			currentFrame: 0,
+			totalFrames: 0,
+			elapsedMs: 0
+		};
+
+		const resolution = getResolutionPreset($customizeSettings.resolution);
+
+		videoExporter = new VideoExporter();
+
+		try {
+			previewState.set('video');
+			isVideoPlaying = false;
+			isMusicPlaying = false;
+			videoCurrentTime = 0;
+			resetNotificationCursor(0);
+			if (backgroundMusicAudio) {
+				backgroundMusicAudio.currentTime = 0;
+			}
+			await tick();
+
+			const previewContainer = await waitForLivePreviewElement();
+
+			await videoExporter.initialize({
+				width: resolution.width,
+				height: resolution.height,
+				fps: normalizedFps,
+				format: $customizeSettings.exportFormat,
+				codec: $customizeSettings.codec,
+				animationSpeed: normalizedAnimationSpeed,
+				quality: $customizeSettings.quality,
+				channelName: $customizeSettings.channelName || 'general',
+				backgroundColor: $customizeSettings.backgroundColor || '#313338',
+				audio: {
+					musicEnabled: $customizeSettings.musicEnabled && Boolean(musicTrackUrl),
+					musicVolume: $customizeSettings.musicVolume,
+					musicTrackUrl: musicTrackUrl,
+					notificationEnabled: $customizeSettings.notificationSoundEnabled,
+					notificationSoundUrl: '/sounds/message.mp3'
+				}
+			});
+
+			const blob = await videoExporter.startRecording(
+				animationTimeline,
+				previewContainer,
+				(progress) => {
+					exportProgress = progress;
+				},
+				async (time: number) => {
+					videoCurrentTime = time;
+					await tick();
+				}
+			);
+
+			if (blob) {
+				exportProgress = {
+					...exportProgress,
+					phase: 'finalizing',
+					percent: 99
+				};
+
+				downloadVideo(blob, $customizeSettings.channelName || 'video');
+
+				exportProgress = {
+					...exportProgress,
+					phase: 'complete',
+					percent: 100
+				};
+			}
+		} catch (error) {
+			console.error('Export failed:', error);
+			exportProgress = {
+				phase: 'cancelled',
+				percent: 0,
+				currentFrame: 0,
+				totalFrames: 0,
+				elapsedMs: 0
+			};
+		} finally {
+			if (videoExporter) {
+				videoExporter.destroy();
+				videoExporter = null;
+			}
+
+			previewState.set(previousPreviewState);
+			videoCurrentTime = previousCurrentTime;
+			isVideoPlaying = previousPreviewState === 'video' ? previousIsVideoPlaying : false;
+			isMusicPlaying =
+				previousPreviewState === 'video' &&
+				previousIsMusicPlaying &&
+				Boolean(musicTrackUrl) &&
+				($customizeSettings.musicEnabled ?? true);
+			
+			setTimeout(() => {
+				isExporting = false;
+				exportProgress = null;
+			}, 1500);
+		}
+	}
+
+	function handleCancelExport() {
+		if (videoExporter) {
+			videoExporter.cancel();
+		}
+		isExporting = false;
+		exportProgress = null;
 	}
 
 	function handleVideoDownload() {
@@ -664,44 +807,19 @@
 	<!-- Preview Panel -->
 	<div class="w-[400px] flex-shrink-0 border-r border-border bg-gradient-to-b from-card to-card/50">
 		<div class="flex h-full flex-col">
-			<!-- Enhanced Header -->
-			<div class="border-b border-border bg-card/80 backdrop-blur-sm p-5">
-				<div class="flex items-center justify-between mb-3">
-					<div class="flex items-center gap-3">
-						<div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg">
-							<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-							</svg>
-						</div>
-						<div>
-							<h2 class="text-lg font-bold">Live Preview</h2>
-							<p class="text-xs text-muted-foreground">Real-time visualization</p>
-						</div>
-					</div>
-				</div>
-				<!-- Stats -->
-				<div class="flex items-center gap-4 text-xs">
-					<div class="flex items-center gap-1.5">
-						<div class="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
-						<span class="text-muted-foreground">{$characters.length} Characters</span>
-					</div>
-					<div class="flex items-center gap-1.5">
-						<div class="h-2 w-2 rounded-full bg-blue-500"></div>
-						<span class="text-muted-foreground">{$messages.length} Messages</span>
-					</div>
-				</div>
-			</div>
 			<div class="flex flex-1 items-center justify-center p-8 bg-gradient-to-b from-transparent to-accent/5">
 				<div class="flex flex-col items-center gap-4">
-					<PhonePreview
-						characters={$characters}
-						messages={$messages}
-						connections={$connections}
-						previewState={$previewState}
-						isGenerating={$isGenerating}
-						customizeSettings={$customizeSettings}
-						currentTime={videoCurrentTime}
-					/>
+					<div bind:this={livePreviewCaptureElement}>
+						<PhonePreview
+							characters={$characters}
+							messages={$messages}
+							connections={$connections}
+							previewState={$previewState}
+							isGenerating={$isGenerating}
+							customizeSettings={$customizeSettings}
+							currentTime={videoCurrentTime}
+						/>
+					</div>
 					
 					{#if $previewState === 'video'}
 						<VideoControls
@@ -748,10 +866,13 @@
 				musicTrackName={musicTrackName}
 				hasMusicTrack={Boolean(musicTrackUrl)}
 				isMusicPlaying={isMusicPlaying}
+				isExporting={isExporting}
+				exportProgress={exportProgress}
 				onPreviewAnimation={handlePreviewAnimation}
 				onMusicUpload={handleMusicUpload}
 				onMusicToggle={handleMusicToggle}
 				onExportVideo={handleExportVideo}
+				onCancelExport={handleCancelExport}
 				onCustomizationApply={handleApplyCustomization}
 			/>
 		</div>
@@ -763,5 +884,6 @@
 		open={$editingCharacter !== null}
 		onClose={handleCharacterEditorClose}
 	/>
+
 </div>
 {/if}
