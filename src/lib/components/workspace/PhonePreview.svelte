@@ -2,8 +2,12 @@
 	import type { Character, Message, Connection, CustomizationSettings } from '$lib/types';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { Progress } from '$lib/components/ui/progress';
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { analyzeMessageFlow } from '$lib/utils/messageFlow';
+	import {
+		buildMessageAnimationTimeline,
+		resolvePlaybackState,
+		type PlaybackMessageState
+	} from '$lib/utils/animationTimeline';
 
 	interface Props {
 		characters: Character[];
@@ -12,6 +16,7 @@
 		previewState: 'preview' | 'loading' | 'video';
 		isGenerating?: boolean;
 		customizeSettings?: Partial<CustomizationSettings>;
+		currentTime?: number;
 	}
 
 	let {
@@ -19,26 +24,71 @@
 		messages,
 		connections,
 		previewState,
-		customizeSettings = {}
+		customizeSettings = {},
+		currentTime = 0
 	}: Props = $props();
 
+	let messagesViewport = $state<HTMLDivElement | null>(null);
+
 	const messageFlowInfo = $derived(analyzeMessageFlow(messages, connections));
+	const orderedPreviewMessages = $derived(messageFlowInfo.map((info) => info.message));
+	const messageMap = $derived(new Map(messages.map((message) => [message.id, message])));
+	const characterMap = $derived(new Map(characters.map((character) => [character.id, character])));
+
+	const timeline = $derived.by(() =>
+		buildMessageAnimationTimeline(messages, connections, {
+			messageDuration: customizeSettings.messageDuration,
+			transitionDuration: customizeSettings.transitionDuration,
+			enableTransitions: customizeSettings.enableTransitions
+		})
+	);
+
+	const playbackState = $derived.by(() =>
+		previewState === 'video' ? resolvePlaybackState(timeline, currentTime) : null
+	);
+
+	const renderedMessages = $derived.by(() => {
+		if (previewState === 'video') {
+			return playbackState?.visibleMessages ?? [];
+		}
+
+		return orderedPreviewMessages.map((message) => ({
+			message,
+			text: message.text,
+			isTyping: false,
+			isComplete: true
+		}) satisfies PlaybackMessageState);
+	});
+
+	const visibleMessageTextById = $derived(
+		new Map(renderedMessages.map((rendered) => [rendered.message.id, rendered.text]))
+	);
+
+	const typingIndicatorCharacterId = $derived(
+		previewState === 'video' ? playbackState?.typingIndicatorCharacterId ?? null : null
+	);
+	const typingIndicatorCharacter = $derived(
+		typingIndicatorCharacterId
+			? (characterMap.get(typingIndicatorCharacterId) ?? null)
+			: null
+	);
+
 	const backgroundColor = $derived(customizeSettings.backgroundColor || '#313338');
 	const primaryColor = $derived(customizeSettings.primaryColor || '#5865f2');
 	const textColor = $derived(customizeSettings.textColor || '#dcddde');
 	const channelName = $derived(customizeSettings.channelName || 'general');
-	
+
 	// Adapt foreground colors based on background luminance
 	const adaptedColors = $derived(() => {
-		// Simple luminance calculation
 		const hex = backgroundColor.replace('#', '');
-		const r = parseInt(hex.substr(0, 2), 16);
-		const g = parseInt(hex.substr(2, 2), 16);
-		const b = parseInt(hex.substr(4, 2), 16);
+		const normalized = hex.length === 6 ? hex : '313338';
+		const r = parseInt(normalized.slice(0, 2), 16);
+		const g = parseInt(normalized.slice(2, 4), 16);
+		const b = parseInt(normalized.slice(4, 6), 16);
 		const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-		
+
 		const isDark = luminance < 0.5;
-		
+
 		return {
 			header: isDark ? `${backgroundColor}dd` : `${backgroundColor}ee`,
 			headerBorder: isDark ? `${backgroundColor}44` : `${backgroundColor}66`,
@@ -50,6 +100,7 @@
 			textFaint: isDark ? `${textColor}50` : '#d1d5db'
 		};
 	});
+
 	const fontFamily = $derived(customizeSettings.fontFamily || 'Inter');
 	const fontFamilyStack = $derived.by(() => {
 		const stacks: Record<string, string> = {
@@ -68,15 +119,44 @@
 	const messagePadding = $derived(customizeSettings.messagePadding || 16);
 	const showAvatars = $derived(customizeSettings.showAvatars ?? true);
 	const showTimestamps = $derived(customizeSettings.showTimestamps ?? true);
-	
-	// Convert font weight to CSS value
+
 	const fontWeightValue = $derived(
-		fontWeight === 'light' ? '300' :
-		fontWeight === 'normal' ? '400' :
-		fontWeight === 'medium' ? '500' :
-		fontWeight === 'semibold' ? '600' :
-		fontWeight === 'bold' ? '700' : '400'
+		fontWeight === 'light'
+			? '300'
+			: fontWeight === 'normal'
+				? '400'
+				: fontWeight === 'medium'
+					? '500'
+					: fontWeight === 'semibold'
+						? '600'
+						: fontWeight === 'bold'
+							? '700'
+							: '400'
 	);
+
+	const scrollSignal = $derived.by(() => {
+		const lastMessage = renderedMessages[renderedMessages.length - 1];
+		return `${previewState}:${currentTime}:${renderedMessages.length}:${lastMessage?.message.id ?? ''}:${lastMessage?.text.length ?? 0}:${typingIndicatorCharacterId ?? ''}`;
+	});
+
+	$effect(() => {
+		scrollSignal;
+		if (!messagesViewport) return;
+
+		const target = Math.max(0, messagesViewport.scrollHeight - messagesViewport.clientHeight);
+		if (previewState !== 'video') {
+			messagesViewport.scrollTop = target;
+			return;
+		}
+
+		const delta = target - messagesViewport.scrollTop;
+		if (Math.abs(delta) <= 1) {
+			messagesViewport.scrollTop = target;
+			return;
+		}
+
+		messagesViewport.scrollTop = messagesViewport.scrollTop + delta * 0.22;
+	});
 </script>
 
 <div class="relative">
@@ -112,14 +192,14 @@
 							<div class="flex items-center flex-1 min-w-0">
 								<!-- Channel Icon & Name -->
 								<div class="flex items-center gap-2 flex-1 min-w-0">
-								<div
-									class="w-6 h-6 rounded flex items-center justify-center flex-shrink-0"
-									style="background-color: {adaptedColors().hover}"
-								>
-									<span class="text-xs font-semibold" style="color: {adaptedColors().text}">#</span>
-								</div>
-								<div class="flex-1 min-w-0">
-									<div class="text-sm font-semibold truncate" style="color: {adaptedColors().text}">
+									<div
+										class="w-6 h-6 rounded flex items-center justify-center flex-shrink-0"
+										style="background-color: {adaptedColors().hover}"
+									>
+										<span class="text-xs font-semibold" style="color: {adaptedColors().text}">#</span>
+									</div>
+									<div class="flex-1 min-w-0">
+										<div class="text-sm font-semibold truncate" style="color: {adaptedColors().text}">
 											{channelName}
 										</div>
 									</div>
@@ -143,54 +223,55 @@
 						</div>
 
 						<!-- Messages Area -->
-						<ScrollArea class="flex-1 px-1 py-4">
+						<div class="flex-1 overflow-y-auto px-1 py-4" bind:this={messagesViewport}>
 							<div style="gap: {messageSpacing}px; display: flex; flex-direction: column; text-align: left; font-weight: {fontWeightValue};">
-								{#if messageFlowInfo.length === 0}
+								{#if renderedMessages.length === 0}
 									<!-- Welcome Message -->
 									<div class="flex flex-col items-center justify-center py-8 text-center">
-									<div 
-										class="w-16 h-16 rounded-full flex items-center justify-center mb-4"
-										style="background-color: {adaptedColors().hover}"
-									>
-										<span class="text-2xl font-bold" style="color: {adaptedColors().textMuted}">#</span>
-									</div>
-									<div class="text-base font-semibold mb-1" style="color: {adaptedColors().text}">
-										Welcome to #{channelName}!
-									</div>
-									<div class="text-xs px-6" style="color: {adaptedColors().textDim}">
+										<div
+											class="w-16 h-16 rounded-full flex items-center justify-center mb-4"
+											style="background-color: {adaptedColors().hover}"
+										>
+											<span class="text-2xl font-bold" style="color: {adaptedColors().textMuted}">#</span>
+										</div>
+										<div class="text-base font-semibold mb-1" style="color: {adaptedColors().text}">
+											Welcome to #{channelName}!
+										</div>
+										<div class="text-xs px-6" style="color: {adaptedColors().textDim}">
 											This is the beginning of the #{channelName} channel.
 										</div>
 									</div>
 								{:else}
-									{#each messageFlowInfo as { message }, index (message.id)}
-										{@const character = characters.find((c) => c.id === message.characterId)}
+									{#each renderedMessages as rendered, index (rendered.message.id)}
+										{@const message = rendered.message}
+										{@const character = message.characterId ? characterMap.get(message.characterId) : undefined}
 										{@const displayCharacter = character || {
 											id: 'unassigned',
 											username: 'Unknown',
 											avatar: '',
 											roleColor: '#99aab5'
 										}}
-										{@const prevMessage = index > 0 ? messageFlowInfo[index - 1].message : null}
+										{@const prevMessage = index > 0 ? renderedMessages[index - 1].message : null}
 										{@const isSameUser = prevMessage && prevMessage.characterId === message.characterId}
 										{@const timeDiff = prevMessage ? new Date(message.timestamp).getTime() - new Date(prevMessage.timestamp).getTime() : 0}
-										{@const isGrouped = isSameUser && timeDiff < 300000}
-										{@const replyMessage = message.replyTo ? messages.find((m) => m.id === message.replyTo) : null}
-										{@const replyCharacter = replyMessage ? characters.find((c) => c.id === replyMessage.characterId) : null}
-										{@const replyPreview = replyMessage ? (replyMessage.text.length > 90 ? `${replyMessage.text.slice(0, 87)}...` : replyMessage.text) : ''}
+										{@const isGrouped = Boolean(isSameUser && timeDiff < 300000)}
+										{@const replyMessage = message.replyTo ? messageMap.get(message.replyTo) : undefined}
+										{@const replyCharacter = replyMessage?.characterId ? characterMap.get(replyMessage.characterId) : undefined}
+										{@const replyText = replyMessage ? visibleMessageTextById.get(replyMessage.id) ?? replyMessage.text : ''}
+										{@const replyPreview = replyText.length > 90 ? `${replyText.slice(0, 87)}...` : replyText}
 
 										{#if !isGrouped}
-											<!-- Full Message with Avatar -->
 											<div class="flex items-start gap-3 hover:bg-white/5 rounded transition-colors" style="padding: {messagePadding / 4}px {messagePadding / 2}px;">
 												{#if showAvatars}
-												<Avatar class="w-10 h-10 flex-shrink-0 mt-0.5" style="border-radius: 50%; overflow: hidden;">
-													<AvatarImage src={displayCharacter.avatar} alt={displayCharacter.username} style="border-radius: 50%; width: 100%; height: 100%; object-fit: cover;" />
-													<AvatarFallback
-														class="text-white text-xs font-semibold"
-														style="background-color: {displayCharacter.roleColor}; border-radius: 50%; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"
-													>
-														{displayCharacter.username.slice(0, 2).toUpperCase()}
-													</AvatarFallback>
-												</Avatar>
+													<Avatar class="w-10 h-10 flex-shrink-0 mt-0.5" style="border-radius: 50%; overflow: hidden;">
+														<AvatarImage src={displayCharacter.avatar} alt={displayCharacter.username} style="border-radius: 50%; width: 100%; height: 100%; object-fit: cover;" />
+														<AvatarFallback
+															class="text-white text-xs font-semibold"
+															style="background-color: {displayCharacter.roleColor}; border-radius: 50%; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"
+														>
+															{displayCharacter.username.slice(0, 2).toUpperCase()}
+														</AvatarFallback>
+													</Avatar>
 												{/if}
 
 												<div class="flex-1 min-w-0" style="margin-left: {showAvatars ? '0' : '0'}">
@@ -204,12 +285,12 @@
 															</span>
 														{/if}
 														{#if showTimestamps}
-														<span class="text-xs font-medium" style="color: {adaptedColors().textFaint}">
-															{new Date(message.timestamp).toLocaleTimeString([], {
-																hour: 'numeric',
-																minute: '2-digit'
-															})}
-														</span>
+															<span class="text-xs font-medium" style="color: {adaptedColors().textFaint}">
+																{new Date(message.timestamp).toLocaleTimeString([], {
+																	hour: 'numeric',
+																	minute: '2-digit'
+																})}
+															</span>
 														{/if}
 													</div>
 
@@ -249,22 +330,24 @@
 														class="leading-relaxed break-words"
 														style="color: {textColor}e6; font-size: {fontSize}px; font-weight: {fontWeightValue}; padding: {messagePadding / 8}px 0;"
 													>
-														{message.text}
+														{rendered.text}
+														{#if rendered.isTyping}
+															<span class="inline-block ml-0.5 h-[1em] align-[-0.1em] w-[1px] animate-pulse" style="background-color: {textColor}b3"></span>
+														{/if}
 													</div>
 												</div>
 											</div>
 										{:else}
-											<!-- Grouped Message (no avatar) -->
 											<div class="flex items-start gap-3 hover:bg-white/5 rounded transition-colors group" style="padding: {messagePadding / 4}px {messagePadding / 2}px;">
 												{#if showAvatars && showTimestamps}
-												<div class="w-10 flex-shrink-0 flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-													<span class="text-[10px] font-medium" style="color: {textColor}40">
-														{new Date(message.timestamp).toLocaleTimeString([], {
-															hour: 'numeric',
-															minute: '2-digit'
-														})}
-													</span>
-												</div>
+													<div class="w-10 flex-shrink-0 flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+														<span class="text-[10px] font-medium" style="color: {textColor}40">
+															{new Date(message.timestamp).toLocaleTimeString([], {
+																hour: 'numeric',
+																minute: '2-digit'
+															})}
+														</span>
+													</div>
 												{/if}
 
 												<div class="flex-1 min-w-0" style="margin-left: {showAvatars ? '0' : '0'}">
@@ -304,22 +387,46 @@
 														class="leading-relaxed break-words"
 														style="color: {textColor}e6; font-size: {fontSize}px; font-weight: {fontWeightValue}; padding: {messagePadding / 8}px 0;"
 													>
-														{message.text}
+														{rendered.text}
+														{#if rendered.isTyping}
+															<span class="inline-block ml-0.5 h-[1em] align-[-0.1em] w-[1px] animate-pulse" style="background-color: {textColor}b3"></span>
+														{/if}
 													</div>
 												</div>
 											</div>
 										{/if}
 									{/each}
+
+									{#if typingIndicatorCharacter}
+										<div class="flex items-end gap-3" style="padding: {messagePadding / 4}px {messagePadding / 2}px;">
+											{#if showAvatars}
+												<Avatar class="w-10 h-10 flex-shrink-0 mt-0.5" style="border-radius: 50%; overflow: hidden;">
+													<AvatarImage src={typingIndicatorCharacter.avatar} alt={typingIndicatorCharacter.username} style="border-radius: 50%; width: 100%; height: 100%; object-fit: cover;" />
+													<AvatarFallback
+														class="text-white text-xs font-semibold"
+														style="background-color: {typingIndicatorCharacter.roleColor}; border-radius: 50%; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"
+													>
+														{typingIndicatorCharacter.username.slice(0, 2).toUpperCase()}
+													</AvatarFallback>
+												</Avatar>
+											{/if}
+											<div class="rounded-2xl px-3 py-2 inline-flex items-center gap-1.5" style="background-color: {adaptedColors().input}">
+												<span class="h-1.5 w-1.5 rounded-full animate-bounce" style="background-color: {textColor}99; animation-delay: 0ms;"></span>
+												<span class="h-1.5 w-1.5 rounded-full animate-bounce" style="background-color: {textColor}99; animation-delay: 120ms;"></span>
+												<span class="h-1.5 w-1.5 rounded-full animate-bounce" style="background-color: {textColor}99; animation-delay: 240ms;"></span>
+											</div>
+										</div>
+									{/if}
 								{/if}
 							</div>
-						</ScrollArea>
+						</div>
 
 						<!-- Discord Mobile Input Bar -->
-						<div 
+						<div
 							class="px-3 py-2 border-t flex-shrink-0 backdrop-blur-sm"
 							style="background-color: {adaptedColors().header}; border-top-color: {adaptedColors().headerBorder}"
 						>
-							<div 
+							<div
 								class="flex items-center gap-2 rounded-full px-3 py-2"
 								style="background-color: {adaptedColors().input}"
 							>
@@ -342,22 +449,6 @@
 								</div>
 							</div>
 						</div>
-
-						<!-- Video Overlay -->
-						{#if previewState === 'video'}
-							<div class="absolute inset-0 z-0 flex items-center justify-center">
-								<div
-									class="absolute inset-0 bg-gradient-to-b from-transparent to-black opacity-10"
-									aria-hidden="true"
-								></div>
-								<div
-									class="w-10 h-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center"
-									aria-hidden="true"
-								>
-									<div class="w-0 h-0 border-y-[7px] border-y-transparent border-l-[12px] border-l-white ml-1"></div>
-								</div>
-							</div>
-						{/if}
 					</div>
 				{:else if previewState === 'loading'}
 					<!-- Loading State -->

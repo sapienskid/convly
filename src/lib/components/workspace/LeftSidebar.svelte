@@ -8,19 +8,8 @@
 	import User from 'lucide-svelte/icons/user';
 	import MessageSquare from 'lucide-svelte/icons/message-square';
 	import MessageCircle from 'lucide-svelte/icons/message-circle';
-	import Download from 'lucide-svelte/icons/download';
-	import Upload from 'lucide-svelte/icons/upload';
 	import Code2 from 'lucide-svelte/icons/code-2';
-	import HelpCircle from 'lucide-svelte/icons/help-circle';
-	import {
-		characters,
-		messages,
-		connections,
-		customizeSettings,
-		importConversationFromJSON,
-		importProjectData
-	} from '$lib/stores/appStore';
-	import { get } from 'svelte/store';
+	import { importConversationFromJSON } from '$lib/stores/appStore';
 
 	interface Props {
 		selectedTool: Tool;
@@ -41,41 +30,6 @@
 		{ id: 'character', icon: User, label: 'Character', shortcut: 'C' },
 		{ id: 'message', icon: MessageSquare, label: 'Message', shortcut: 'M' }
 	];
-
-	function handleExport() {
-		const data = {
-			characters: get(characters),
-			messages: get(messages),
-			connections: get(connections),
-			customizeSettings: get(customizeSettings)
-		};
-		const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = 'convly-project.json';
-		a.click();
-		URL.revokeObjectURL(url);
-	}
-
-	function handleImport() {
-		const input = document.createElement('input');
-		input.type = 'file';
-		input.accept = '.json';
-		input.onchange = async (e) => {
-			const file = (e.target as HTMLInputElement).files?.[0];
-			if (file) {
-				const text = await file.text();
-				try {
-					const data = JSON.parse(text);
-					importProjectData(data);
-				} catch (err) {
-					console.error('Invalid project file:', err);
-				}
-			}
-		};
-		input.click();
-	}
 
 	function handleImportJson() {
 		const input = document.createElement('input');
@@ -129,12 +83,8 @@
 	<!-- Middle Spacer -->
 	<div class="flex-1"></div>
 
-	<!-- Bottom - Projects & Settings -->
+	<!-- Bottom - JSON Import -->
 	<div class="flex flex-col items-center gap-1 p-2">
-		<Button variant="ghost" size="icon" class="h-10 w-10" title="Import Project" onclick={handleImport}>
-			<Upload class="size-5" />
-		</Button>
-
 		<Button
 			variant="ghost"
 			size="icon"
@@ -143,14 +93,6 @@
 			onclick={handleImportJson}
 		>
 			<Code2 class="size-5" />
-		</Button>
-
-		<Button variant="ghost" size="icon" class="h-10 w-10" title="Export Project" onclick={handleExport}>
-			<Download class="size-5" />
-		</Button>
-
-		<Button variant="ghost" size="icon" class="h-10 w-10" title="Help">
-			<HelpCircle class="size-5" />
 		</Button>
 	</div>
 </div>

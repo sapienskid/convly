@@ -7,6 +7,7 @@
 		isPlaying?: boolean;
 		currentTime?: number;
 		duration?: number;
+		fps?: number;
 		onPlayPause?: () => void;
 		onRestart?: () => void;
 		onDownload?: () => void;
@@ -17,6 +18,7 @@
 		isPlaying = false,
 		currentTime = 0,
 		duration = 100,
+		fps = 30,
 		onPlayPause = () => {},
 		onRestart = () => {},
 		onDownload = () => {},
@@ -33,7 +35,10 @@
 <div class="mt-4 space-y-3 bg-card/50 backdrop-blur-sm rounded-lg p-4 border border-border">
 	<div class="flex items-center justify-between text-xs text-muted-foreground font-mono">
 		<span>{formatTime(currentTime)}</span>
-		<span>{formatTime(duration)}</span>
+		<div class="flex items-center gap-2">
+			<span>{fps} FPS</span>
+			<span>{formatTime(duration)}</span>
+		</div>
 	</div>
 	
 	<Slider

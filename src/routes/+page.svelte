@@ -10,23 +10,70 @@
 	import { ChevronRight, ChevronLeft } from 'lucide-svelte/icons';
 	import { onMount } from 'svelte';
 	import { initializeStore, isInitialized } from '$lib/stores/appStore';
+	import { buildMessageAnimationTimeline } from '$lib/utils/animationTimeline';
 	
 	let isRightPanelCollapsed = $state(false);
-	
-	onMount(() => {
-		initializeStore();
-	});
+	let editorView = $state<'graph' | 'json'>('graph');
+	let jsonEditorValue = $state('');
+	let jsonEditorError = $state<string | null>(null);
+	let jsonEditorStatus = $state<string | null>(null);
 	
 	// Video Controls State
 	let isVideoPlaying = $state(false);
 	let videoCurrentTime = $state(0);
-	const videoDuration = $derived.by(() => {
-		if ($messages.length === 0) return 0;
-		const transitionCount = Math.max($messages.length - 1, 0);
-		const transitionTime = $customizeSettings.enableTransitions
-			? transitionCount * $customizeSettings.transitionDuration
-			: 0;
-		return $messages.length * $customizeSettings.messageDuration + transitionTime;
+	let backgroundMusicAudio = $state<HTMLAudioElement | null>(null);
+	let notificationAudio = $state<HTMLAudioElement | null>(null);
+	let musicObjectUrl = $state<string | null>(null);
+	let musicTrackUrl = $state<string | null>(null);
+	let musicTrackName = $state('No music selected');
+	let isMusicPlaying = $state(false);
+	let nextNotificationIndex = $state(0);
+	const animationTimeline = $derived.by(() =>
+		buildMessageAnimationTimeline($messages, $connections, $customizeSettings)
+	);
+	const videoDuration = $derived(animationTimeline.totalDuration);
+	let lastPreviewMode = $state<'preview' | 'loading' | 'video'>('preview');
+	const NOTIFICATION_EPSILON = 0.0001;
+
+	function getResolutionPreset(resolution: string) {
+		const presets: Record<string, { width: number; height: number; aspectRatio: string; platform: string }> = {
+			'vertical-1080x1920': { width: 1080, height: 1920, aspectRatio: '9:16', platform: 'vertical' }
+		};
+		return presets[resolution] ?? presets['vertical-1080x1920'];
+	}
+
+	function resetNotificationCursor(timeSeconds: number) {
+		if (timeSeconds <= NOTIFICATION_EPSILON) {
+			nextNotificationIndex = 0;
+			return;
+		}
+
+		const index = animationTimeline.entries.findIndex(
+			(entry) => entry.start >= timeSeconds - NOTIFICATION_EPSILON
+		);
+		nextNotificationIndex = index === -1 ? animationTimeline.entries.length : index;
+	}
+
+	onMount(() => {
+		initializeStore();
+
+		const music = new Audio();
+		music.loop = true;
+		music.preload = 'auto';
+		backgroundMusicAudio = music;
+
+		const notification = new Audio('/sounds/message.mp3');
+		notification.preload = 'auto';
+		notification.volume = 0.45;
+		notificationAudio = notification;
+
+		return () => {
+			music.pause();
+			notification.pause();
+			if (musicObjectUrl) {
+				URL.revokeObjectURL(musicObjectUrl);
+			}
+		};
 	});
 
 	$effect(() => {
@@ -36,46 +83,233 @@
 	});
 
 	$effect(() => {
+		const nextMode = $previewState;
+		if (nextMode === lastPreviewMode) return;
+
+		if (nextMode === 'video') {
+			videoCurrentTime = 0;
+			isVideoPlaying = videoDuration > 0;
+			resetNotificationCursor(0);
+			if (backgroundMusicAudio) {
+				backgroundMusicAudio.currentTime = 0;
+			}
+			isMusicPlaying = isVideoPlaying && Boolean(musicTrackUrl) && ($customizeSettings.musicEnabled ?? true);
+		} else {
+			isVideoPlaying = false;
+			isMusicPlaying = false;
+			resetNotificationCursor(0);
+		}
+
+		lastPreviewMode = nextMode;
+	});
+
+	$effect(() => {
+		if (!backgroundMusicAudio) return;
+		backgroundMusicAudio.volume = Math.max(0, Math.min($customizeSettings.musicVolume ?? 0.3, 1));
+	});
+
+	$effect(() => {
+		if (!backgroundMusicAudio) return;
+		const shouldPlay = isMusicPlaying && Boolean(musicTrackUrl) && ($customizeSettings.musicEnabled ?? true);
+
+		if (shouldPlay) {
+			const playPromise = backgroundMusicAudio.play();
+			if (playPromise) {
+				playPromise.catch(() => {
+					isMusicPlaying = false;
+				});
+			}
+		} else {
+			backgroundMusicAudio.pause();
+		}
+	});
+
+	$effect(() => {
+		if (!notificationAudio || !isVideoPlaying || $previewState !== 'video') return;
+
+		const entries = animationTimeline.entries;
+		if (!($customizeSettings.notificationSoundEnabled ?? true)) {
+			while (
+				nextNotificationIndex < entries.length &&
+				entries[nextNotificationIndex].start <= videoCurrentTime + NOTIFICATION_EPSILON
+			) {
+				nextNotificationIndex += 1;
+			}
+			return;
+		}
+
+		while (
+			nextNotificationIndex < entries.length &&
+			entries[nextNotificationIndex].start <= videoCurrentTime + NOTIFICATION_EPSILON
+		) {
+			notificationAudio.currentTime = 0;
+			const playPromise = notificationAudio.play();
+			if (playPromise) {
+				playPromise.catch(() => {});
+			}
+			nextNotificationIndex += 1;
+		}
+	});
+
+	$effect(() => {
 		if (!isVideoPlaying || $previewState !== 'video' || videoDuration <= 0) return;
 
-		const fps = $customizeSettings.fps;
+		const fps = Math.max($customizeSettings.fps, 1);
 		const speed = Math.max($customizeSettings.animationSpeed, 0.1);
-		const step = (1 / fps) * speed;
-		const interval = window.setInterval(() => {
-			videoCurrentTime = Math.min(videoCurrentTime + step, videoDuration);
-			if (videoCurrentTime >= videoDuration) {
-				isVideoPlaying = false;
-				window.clearInterval(interval);
-			}
-		}, 1000 / fps);
+		const frameDurationMs = 1000 / fps;
+		const stepSeconds = frameDurationMs / 1000;
+		let frameId = 0;
+		let lastTimestamp = 0;
+		let accumulator = 0;
 
-		return () => window.clearInterval(interval);
+		const tick = (timestamp: number) => {
+			if (!isVideoPlaying) return;
+
+			if (lastTimestamp === 0) {
+				lastTimestamp = timestamp;
+			}
+
+			const delta = Math.min(timestamp - lastTimestamp, frameDurationMs * 8);
+			lastTimestamp = timestamp;
+			accumulator += delta;
+
+			while (accumulator >= frameDurationMs) {
+				videoCurrentTime = Math.min(videoCurrentTime + stepSeconds * speed, videoDuration);
+				accumulator -= frameDurationMs;
+
+				if (videoCurrentTime >= videoDuration) {
+					isVideoPlaying = false;
+					isMusicPlaying = false;
+					break;
+				}
+			}
+
+			if (isVideoPlaying) {
+				frameId = requestAnimationFrame(tick);
+			}
+		};
+
+		frameId = requestAnimationFrame(tick);
+		return () => cancelAnimationFrame(frameId);
 	});
 
 	function handleVideoPlayPause() {
 		if (videoDuration <= 0) return;
 		if (videoCurrentTime >= videoDuration) {
 			videoCurrentTime = 0;
+			resetNotificationCursor(0);
+			if (backgroundMusicAudio) {
+				backgroundMusicAudio.currentTime = 0;
+			}
 		}
-		isVideoPlaying = !isVideoPlaying;
+		const nextIsPlaying = !isVideoPlaying;
+		isVideoPlaying = nextIsPlaying;
+		isMusicPlaying = nextIsPlaying && Boolean(musicTrackUrl) && ($customizeSettings.musicEnabled ?? true);
 	}
 
 	function handleVideoRestart() {
 		videoCurrentTime = 0;
 		isVideoPlaying = false;
+		isMusicPlaying = false;
+		resetNotificationCursor(0);
+		if (backgroundMusicAudio) {
+			backgroundMusicAudio.currentTime = 0;
+		}
+	}
+
+	function handlePreviewAnimation() {
+		if (videoDuration <= 0) return;
+		previewState.set('video');
+		videoCurrentTime = 0;
+		isVideoPlaying = true;
+		resetNotificationCursor(0);
+		if (backgroundMusicAudio) {
+			backgroundMusicAudio.currentTime = 0;
+		}
+		isMusicPlaying = Boolean(musicTrackUrl) && ($customizeSettings.musicEnabled ?? true);
+	}
+
+	function handleMusicUpload(file: File) {
+		const objectUrl = URL.createObjectURL(file);
+		if (musicObjectUrl) {
+			URL.revokeObjectURL(musicObjectUrl);
+		}
+		musicObjectUrl = objectUrl;
+		musicTrackUrl = objectUrl;
+		musicTrackName = file.name;
+		isMusicPlaying = false;
+		if (backgroundMusicAudio) {
+			backgroundMusicAudio.src = objectUrl;
+			backgroundMusicAudio.load();
+		}
+	}
+
+	function handleMusicToggle() {
+		if (!musicTrackUrl) return;
+		isMusicPlaying = !isMusicPlaying;
+	}
+
+	function handleExportVideo() {
+		if (videoDuration <= 0) return;
+		previewState.set('video');
+		isVideoPlaying = false;
+		isMusicPlaying = false;
+		videoCurrentTime = 0;
+		resetNotificationCursor(0);
+		handleVideoDownload();
 	}
 
 	function handleVideoDownload() {
+		const resolutionPreset = getResolutionPreset($customizeSettings.resolution);
+		const timeline = animationTimeline.entries.map((entry, index) => ({
+			index: index + 1,
+			messageId: entry.message.id,
+			characterId: entry.message.characterId ?? null,
+			replyTo: entry.message.replyTo ?? null,
+			text: entry.message.text,
+			start: entry.start,
+			typingEnd: entry.typingEnd,
+			holdEnd: entry.holdEnd,
+			transitionEnd: entry.transitionEnd,
+			typingDuration: entry.typingDuration,
+			holdDuration: entry.holdDuration,
+			transitionDuration: entry.transitionDuration
+		}));
+
+		const orderedConversation = animationTimeline.orderedMessages.map((message, index) => ({
+			index: index + 1,
+			id: message.id,
+			characterId: message.characterId ?? null,
+			replyTo: message.replyTo ?? null,
+			timestamp: message.timestamp,
+			text: message.text
+		}));
+
 		const exportData = {
+			version: 2,
 			exportedAt: new Date().toISOString(),
 			renderPlan: {
 				format: $customizeSettings.exportFormat,
 				codec: $customizeSettings.codec,
 				resolution: $customizeSettings.resolution,
+				width: resolutionPreset.width,
+				height: resolutionPreset.height,
+				aspectRatio: resolutionPreset.aspectRatio,
+				platformPreset: resolutionPreset.platform,
 				fps: $customizeSettings.fps,
 				quality: $customizeSettings.quality,
 				durationSeconds: videoDuration
 			},
+				audio: {
+					musicEnabled: $customizeSettings.musicEnabled,
+					musicVolume: $customizeSettings.musicVolume,
+					trackName: musicTrackName,
+					hasTrack: Boolean(musicTrackUrl),
+					notificationEnabled: $customizeSettings.notificationSoundEnabled,
+					notificationSound: '/sounds/message.mp3'
+				},
+			timeline,
+			conversation: orderedConversation,
 			project: {
 				characters: $characters,
 				messages: $messages,
@@ -89,16 +323,29 @@
 		});
 		const url = URL.createObjectURL(blob);
 		const link = document.createElement('a');
+		const channelSlug = ($customizeSettings.channelName || 'channel')
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '');
 		link.href = url;
-		link.download = `convly-render-plan-${Date.now()}.json`;
+		link.download = `convly-export-${channelSlug || 'channel'}-${Date.now()}.json`;
 		link.click();
 		URL.revokeObjectURL(url);
 	}
 
 	function handleVideoSeek(time: number) {
 		videoCurrentTime = Math.max(0, Math.min(time, videoDuration));
+		resetNotificationCursor(videoCurrentTime);
+		if (backgroundMusicAudio && musicTrackUrl) {
+			try {
+				backgroundMusicAudio.currentTime = videoCurrentTime;
+			} catch {
+				// Ignore seek errors while metadata is still loading.
+			}
+		}
 		if (videoCurrentTime >= videoDuration) {
 			isVideoPlaying = false;
+			isMusicPlaying = false;
 		}
 	}
 
@@ -117,8 +364,8 @@
 		updateMessageText,
 		updateCharacter,
 		addMessageForCharacter,
-		handleGenerateVideo,
 		handleApplyCustomization,
+		importConversationFromJSON,
 		deleteElement,
 		addCharacter,
 		addMessage
@@ -244,6 +491,71 @@
 			selectedElement.set(newId);
 		}
 	}
+
+	function buildConversationJson(): string {
+		const characterById = new Map($characters.map((character) => [character.id, character.username]));
+		const orderedMessages =
+			animationTimeline.orderedMessages.length > 0 ? animationTimeline.orderedMessages : $messages;
+
+		const conversation = orderedMessages.map((message) => {
+			const payload: {
+				id: string;
+				speaker: string;
+				text: string;
+				timestamp: string;
+				replyTo?: string;
+			} = {
+				id: message.id,
+				speaker: characterById.get(message.characterId ?? '') ?? 'Speaker',
+				text: message.text,
+				timestamp: message.timestamp
+			};
+
+			if (message.replyTo) {
+				payload.replyTo = message.replyTo;
+			}
+
+			return payload;
+		});
+
+		return JSON.stringify(
+			{
+				conversation
+			},
+			null,
+			2
+		);
+	}
+
+	function setEditorMode(mode: 'graph' | 'json') {
+		editorView = mode;
+		jsonEditorError = null;
+		jsonEditorStatus = null;
+		if (mode === 'json') {
+			jsonEditorValue = buildConversationJson();
+		}
+	}
+
+	function handleJsonApply() {
+		try {
+			const payload = JSON.parse(jsonEditorValue);
+			importConversationFromJSON(payload);
+			jsonEditorError = null;
+			jsonEditorStatus = 'Conversation JSON applied successfully.';
+		} catch (error) {
+			jsonEditorStatus = null;
+			jsonEditorError =
+				error instanceof Error
+					? error.message
+					: 'Invalid JSON. Use an array (or conversation/messages array) with speaker + text.';
+		}
+	}
+
+	function handleJsonReset() {
+		jsonEditorValue = buildConversationJson();
+		jsonEditorError = null;
+		jsonEditorStatus = 'Conversation JSON reset from current graph.';
+	}
 </script>
 
 <svelte:window onkeydown={handleKeyboardShortcut} />
@@ -271,36 +583,82 @@
 
 	<!-- Main Content Area - Canvas Workspace -->
 	<div class="flex flex-1 flex-col border-r border-border bg-background">
+		<div class="flex items-center justify-between border-b border-border bg-card/60 px-3 py-2">
+			<div class="inline-flex rounded-md border border-border bg-muted/30 p-1">
+				<Button
+					size="sm"
+					variant={editorView === 'graph' ? 'default' : 'ghost'}
+					onclick={() => setEditorMode('graph')}
+				>
+					Graph
+				</Button>
+				<Button
+					size="sm"
+					variant={editorView === 'json' ? 'default' : 'ghost'}
+					onclick={() => setEditorMode('json')}
+				>
+					JSON
+				</Button>
+			</div>
+			{#if editorView === 'json'}
+				<div class="flex items-center gap-2">
+					<Button size="sm" variant="outline" onclick={handleJsonReset}>Reset</Button>
+					<Button size="sm" onclick={handleJsonApply}>Apply JSON</Button>
+				</div>
+			{/if}
+		</div>
+
 		<div class="flex-1">
-			<CanvasWorkspace
-				characters={$characters}
-				messages={$messages}
-				connections={$connections}
-				selectedTool={$selectedTool}
-				selectedElement={$selectedElement}
-				onCharacterMove={updateCharacterPosition}
-				onMessageMove={updateMessagePosition}
-				onMessageTextUpdate={updateMessageText}
-				onCharacterUsernameUpdate={handleCharacterUsernameUpdate}
-				onElementSelect={handleElementSelect}
-				onAddMessage={addMessageForCharacter}
-				onCharacterEdit={handleCharacterEdit}
-			/>
+			{#if editorView === 'graph'}
+				<CanvasWorkspace
+					characters={$characters}
+					messages={$messages}
+					connections={$connections}
+					selectedTool={$selectedTool}
+					selectedElement={$selectedElement}
+					onCharacterMove={updateCharacterPosition}
+					onMessageMove={updateMessagePosition}
+					onMessageTextUpdate={updateMessageText}
+					onCharacterUsernameUpdate={handleCharacterUsernameUpdate}
+					onElementSelect={handleElementSelect}
+					onAddMessage={addMessageForCharacter}
+					onCharacterEdit={handleCharacterEdit}
+				/>
+				{:else}
+					<div class="flex h-full flex-col gap-3 p-4">
+						<p class="text-xs text-muted-foreground">
+							Edit only conversation messages as JSON. Use
+							<span class="font-semibold">Apply JSON</span> to rebuild the graph.
+						</p>
+					<textarea
+						class="h-full min-h-0 w-full flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						bind:value={jsonEditorValue}
+						spellcheck="false"
+					></textarea>
+					{#if jsonEditorError}
+						<p class="text-xs text-destructive">{jsonEditorError}</p>
+					{:else if jsonEditorStatus}
+						<p class="text-xs text-emerald-600">{jsonEditorStatus}</p>
+					{/if}
+				</div>
+			{/if}
 		</div>
 
 		<!-- Bottom Toolbar -->
-		<BottomToolbar
-			selectedTool={$selectedTool}
-			onToolSelect={handleToolSelect}
-			selectedElement={$selectedElement}
-			elementCount={{
-				characters: $characters.length,
-				messages: $messages.length,
-				connections: $connections.length
-			}}
-			onDelete={handleDelete}
-			onDuplicate={handleDuplicate}
-		/>
+		{#if editorView === 'graph'}
+			<BottomToolbar
+				selectedTool={$selectedTool}
+				onToolSelect={handleToolSelect}
+				selectedElement={$selectedElement}
+				elementCount={{
+					characters: $characters.length,
+					messages: $messages.length,
+					connections: $connections.length
+				}}
+				onDelete={handleDelete}
+				onDuplicate={handleDuplicate}
+			/>
+		{/if}
 	</div>
 
 	<!-- Preview Panel -->
@@ -342,6 +700,7 @@
 						previewState={$previewState}
 						isGenerating={$isGenerating}
 						customizeSettings={$customizeSettings}
+						currentTime={videoCurrentTime}
 					/>
 					
 					{#if $previewState === 'video'}
@@ -349,6 +708,7 @@
 							isPlaying={isVideoPlaying}
 							currentTime={videoCurrentTime}
 							duration={videoDuration}
+							fps={$customizeSettings.fps}
 							onPlayPause={handleVideoPlayPause}
 							onRestart={handleVideoRestart}
 							onDownload={handleVideoDownload}
@@ -385,7 +745,13 @@
 				previewState={$previewState}
 				isGenerating={$isGenerating}
 				customizeSettings={$customizeSettings}
-				onGenerateVideo={handleGenerateVideo}
+				musicTrackName={musicTrackName}
+				hasMusicTrack={Boolean(musicTrackUrl)}
+				isMusicPlaying={isMusicPlaying}
+				onPreviewAnimation={handlePreviewAnimation}
+				onMusicUpload={handleMusicUpload}
+				onMusicToggle={handleMusicToggle}
+				onExportVideo={handleExportVideo}
 				onCustomizationApply={handleApplyCustomization}
 			/>
 		</div>

@@ -24,69 +24,89 @@ const demoCharacters: Character[] = [
 		avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=SarahWilson&backgroundColor=b6e3f4,c0aede,d1d4f9&scale=90',
 		roleColor: '#8b5cf6',
 		position: { x: 100, y: 300 }
+	},
+	{
+		id: 'char-demo-3',
+		username: 'Priya Nair',
+		avatar: 'https://api.dicebear.com/7.x/notionists/svg?seed=PriyaNair&backgroundColor=b6e3f4,c0aede,d1d4f9&scale=90',
+		roleColor: '#14b8a6',
+		position: { x: 100, y: 500 }
 	}
 ];
 
-const demoMessages: Message[] = [
+const demoConversation: Array<{
+	id: string;
+	characterId: string;
+	text: string;
+	replyTo?: string;
+}> = [
+	{ id: 'msg-demo-1', characterId: 'char-demo-1', text: 'Morning team, kickoff in five minutes.' },
+	{ id: 'msg-demo-2', characterId: 'char-demo-2', text: "I'm in. Uploading the first storyboard now." },
+	{ id: 'msg-demo-3', characterId: 'char-demo-3', text: 'Got it. I will prep captions and timestamps.' },
 	{
-		id: 'msg-demo-1',
+		id: 'msg-demo-4',
 		characterId: 'char-demo-1',
-		text: 'Hey everyone! Welcome to our Discord chat animation builder 🎉',
-		position: { x: 400, y: 80 },
-		timestamp: new Date().toISOString()
+		text: 'Nice, can you also add the alternate intro?',
+		replyTo: 'msg-demo-2'
+	},
+	{ id: 'msg-demo-5', characterId: 'char-demo-2', text: 'Yes. I will share version A and version B.' },
+	{
+		id: 'msg-demo-6',
+		characterId: 'char-demo-3',
+		text: 'I connected the first six messages in flow.'
 	},
 	{
-		id: 'msg-demo-2',
+		id: 'msg-demo-7',
+		characterId: 'char-demo-1',
+		text: 'Great. Make version B the default for preview.',
+		replyTo: 'msg-demo-5'
+	},
+	{
+		id: 'msg-demo-8',
 		characterId: 'char-demo-2',
-		text: "This looks amazing! Can't wait to create some cool animations 🚀",
-		position: { x: 400, y: 280 },
-		timestamp: new Date().toISOString()
+		text: 'Done. Added transitions and adjusted pacing.'
 	},
 	{
-		id: 'msg-demo-3',
+		id: 'msg-demo-9',
+		characterId: 'char-demo-3',
+		text: 'Scrolling test: adding more lines so we can validate overflow behavior.'
+	},
+	{
+		id: 'msg-demo-10',
 		characterId: 'char-demo-1',
-		text: 'Thanks! Try using the Reply mode to link messages as replies when you connect them 💬',
-		position: { x: 400, y: 480 },
-		timestamp: new Date().toISOString()
+		text: 'Perfect. If this sequence plays smoothly, we are ready to export.',
+		replyTo: 'msg-demo-8'
 	}
 ];
+
+const demoStartTime = Date.now() - demoConversation.length * 60_000;
+const demoMessages: Message[] = demoConversation.map((entry, index) => ({
+	id: entry.id,
+	characterId: entry.characterId,
+	text: entry.text,
+	position: { x: 420 + (index % 2) * 44, y: 80 + index * 132 },
+	timestamp: new Date(demoStartTime + index * 60_000).toISOString(),
+	replyTo: entry.replyTo
+}));
+
+const demoFlowColors = ['#10b981', '#f59e0b', '#3b82f6', '#8b5cf6', '#ef4444'];
+const demoCharacterColors = Object.fromEntries(demoCharacters.map((character) => [character.id, character.roleColor]));
 
 const demoConnections: Connection[] = [
-	{
-		id: 'conn-demo-1',
-		from: 'msg-demo-1',
-		to: 'char-demo-1',
-		type: 'assignment',
-		color: '#3b82f6'
-	},
-	{
-		id: 'conn-demo-2',
-		from: 'msg-demo-2',
-		to: 'char-demo-2',
-		type: 'assignment',
-		color: '#8b5cf6'
-	},
-	{
-		id: 'conn-demo-3',
-		from: 'msg-demo-3',
-		to: 'char-demo-1',
-		type: 'assignment',
-		color: '#3b82f6'
-	},
-	{
-		id: 'conn-demo-4',
-		from: 'msg-demo-1',
-		to: 'msg-demo-2',
-		type: 'flow',
-		color: '#10b981'
-	},
-	{
-		id: 'conn-demo-5',
-		from: 'msg-demo-2',
-		to: 'msg-demo-3',
-		type: 'flow',
-		color: '#f59e0b'
-	}
+	...demoMessages.map((message) => ({
+		id: `conn-demo-assign-${message.id}-${message.characterId ?? 'none'}`,
+		from: message.id,
+		to: message.characterId ?? '',
+		type: 'assignment' as const,
+		color: demoCharacterColors[message.characterId ?? ''] ?? '#99aab5'
+	})),
+	...demoMessages.slice(0, -1).map((message, index) => ({
+		id: `conn-demo-flow-${index + 1}`,
+		from: message.id,
+		to: demoMessages[index + 1].id,
+		type: 'flow' as const,
+		color: demoFlowColors[index % demoFlowColors.length]
+	}))
 ];
 
 export const isInitialized = writable(false);
@@ -100,7 +120,8 @@ function mergeCustomizationSettings(
 ): CustomizationSettings {
 	return {
 		...defaultCustomizationSettings,
-		...(settings ?? {})
+		...(settings ?? {}),
+		resolution: 'vertical-1080x1920'
 	} as CustomizationSettings;
 }
 
@@ -305,6 +326,29 @@ export async function initializeStore() {
 	}
 	
 	isInitialized.set(true);
+}
+
+export function loadLongDemoConversation() {
+	const clonedCharacters = demoCharacters.map((character) => ({
+		...character,
+		position: { ...character.position }
+	}));
+	const clonedMessages = demoMessages.map((message) => ({
+		...message,
+		position: { ...message.position }
+	}));
+	const normalizedConnections = normalizeConnections(
+		demoConnections,
+		clonedCharacters,
+		clonedMessages
+	);
+
+	characters.set(clonedCharacters);
+	messages.set(clonedMessages);
+	connections.set(normalizedConnections);
+	nodeConnectionModes.set({});
+	selectedElement.set(clonedMessages[0]?.id ?? null);
+	previewState.set('preview');
 }
 
 // UI state stores
@@ -1115,7 +1159,8 @@ export function importProjectData(payload: unknown) {
 	if (projectCustomizeSettings) {
 		customizeSettings.update((settings) => ({
 			...settings,
-			...(projectCustomizeSettings as Partial<CustomizationSettings>)
+			...(projectCustomizeSettings as Partial<CustomizationSettings>),
+			resolution: 'vertical-1080x1920'
 		}));
 	}
 
@@ -1168,7 +1213,7 @@ export function handleTemplateSelect(template: any) {
 }
 
 export function handleApplyCustomization(settings: Partial<CustomizationSettings>) {
-	customizeSettings.update((s) => ({ ...s, ...settings }));
+	customizeSettings.update((s) => ({ ...s, ...settings, resolution: 'vertical-1080x1920' }));
 }
 
 export function setConnectionMode(mode: 'flow' | 'reply') {

@@ -19,7 +19,18 @@
 		AccordionItem,
 		AccordionTrigger
 	} from '$lib/components/ui/accordion';
-	import { Type, Layout, Video, Film, Clock, Palette } from 'lucide-svelte/icons';
+	import {
+		Type,
+		Layout,
+		Film,
+		Clock,
+		Palette,
+		Play,
+		Pause,
+		Music2,
+		Download
+	} from 'lucide-svelte/icons';
+	import { buildMessageAnimationTimeline } from '$lib/utils/animationTimeline';
 
 	type SelectOption = { value: string; label: string };
 
@@ -30,7 +41,13 @@
 		previewState: 'preview' | 'loading' | 'video';
 		isGenerating: boolean;
 		customizeSettings: CustomizationSettings;
-		onGenerateVideo: () => void;
+		musicTrackName: string;
+		hasMusicTrack: boolean;
+		isMusicPlaying: boolean;
+		onPreviewAnimation: () => void;
+		onMusicUpload: (file: File) => void;
+		onMusicToggle: () => void;
+		onExportVideo: () => void;
 		onCustomizationApply: (settings: Partial<CustomizationSettings>) => void;
 	}
 
@@ -41,7 +58,13 @@
 		previewState,
 		isGenerating,
 		customizeSettings,
-		onGenerateVideo,
+		musicTrackName,
+		hasMusicTrack,
+		isMusicPlaying,
+		onPreviewAnimation,
+		onMusicUpload,
+		onMusicToggle,
+		onExportVideo,
 		onCustomizationApply
 	}: Props = $props();
 
@@ -63,6 +86,9 @@
 	let transitionDuration = $state(customizeSettings.transitionDuration);
 	let animationSpeed = $state(customizeSettings.animationSpeed);
 	let enableTransitions = $state(customizeSettings.enableTransitions);
+	let musicEnabled = $state(customizeSettings.musicEnabled);
+	let musicVolume = $state(customizeSettings.musicVolume);
+	let notificationSoundEnabled = $state(customizeSettings.notificationSoundEnabled);
 	let exportFormat = $state(customizeSettings.exportFormat);
 	let codec = $state(customizeSettings.codec);
 	let enableCompression = $state(customizeSettings.enableCompression);
@@ -86,6 +112,9 @@
 		transitionDuration = customizeSettings.transitionDuration;
 		animationSpeed = customizeSettings.animationSpeed;
 		enableTransitions = customizeSettings.enableTransitions;
+		musicEnabled = customizeSettings.musicEnabled;
+		musicVolume = customizeSettings.musicVolume;
+		notificationSoundEnabled = customizeSettings.notificationSoundEnabled;
 		exportFormat = customizeSettings.exportFormat;
 		codec = customizeSettings.codec;
 		enableCompression = customizeSettings.enableCompression;
@@ -109,9 +138,7 @@
 	];
 
 	const resolutionOptions: SelectOption[] = [
-		{ value: '720p', label: '720p (1280x720)' },
-		{ value: '1080p', label: '1080p (1920x1080)' },
-		{ value: '1440p', label: '1440p (2560x1440)' }
+		{ value: 'vertical-1080x1920', label: 'Vertical (1080x1920)' }
 	];
 
 	const qualityOptions: SelectOption[] = [
@@ -141,10 +168,11 @@
 		hasValue ? 'line-clamp-1' : 'line-clamp-1 text-muted-foreground';
 
 	const estimatedVideoLength = $derived.by(() => {
-		if (messages.length === 0) return 0;
-		const transitionCount = Math.max(messages.length - 1, 0);
-		const transitionTime = enableTransitions ? transitionCount * transitionDuration : 0;
-		return messages.length * messageDuration + transitionTime;
+		return buildMessageAnimationTimeline(messages, connections, {
+			messageDuration,
+			transitionDuration,
+			enableTransitions
+		}).totalDuration;
 	});
 
 	function handleApplySettings(overrides: Partial<CustomizationSettings> = {}) {
@@ -169,6 +197,9 @@
 			transitionDuration,
 			animationSpeed,
 			enableTransitions,
+			musicEnabled,
+			musicVolume,
+			notificationSoundEnabled,
 			exportFormat,
 			codec: codec as CodecSetting,
 			enableCompression,
@@ -210,7 +241,7 @@
 		<div class="p-6 pb-8">
 			<Accordion
 				type="multiple"
-				value={['appearance', 'typography', 'layout', 'timing', 'video-quality']}
+				value={['appearance', 'typography', 'layout', 'timing', 'audio', 'video']}
 				class="w-full space-y-2"
 			>
 				<AccordionItem value="appearance">
@@ -455,63 +486,6 @@
 					</AccordionContent>
 				</AccordionItem>
 
-				<AccordionItem value="video-quality">
-					<AccordionTrigger>
-						<div class="flex items-center gap-2">
-							<Video class="size-4" />
-							<span>Video Output</span>
-						</div>
-					</AccordionTrigger>
-					<AccordionContent>
-						<div class="space-y-4 pt-2">
-							<div>
-								<Label for="resolution" class="text-sm">Resolution</Label>
-								<Select
-									type="single"
-									bind:value={resolution}
-									items={resolutionOptions}
-									onValueChange={(value) => {
-										resolution = value as CustomizationSettings['resolution'];
-										handleApplySettings({
-											resolution: value as CustomizationSettings['resolution']
-										});
-									}}
-								>
-									<SelectTrigger id="resolution" class="mt-1.5">
-										<span data-slot="select-value" class={selectTriggerTextClass(Boolean(resolution))}>
-											{getOptionLabel(resolutionOptions, resolution, 'Select resolution')}
-										</span>
-									</SelectTrigger>
-									<SelectContent>
-										{#each resolutionOptions as option}
-											<SelectItem value={option.value} label={option.label}>{option.label}</SelectItem>
-										{/each}
-									</SelectContent>
-								</Select>
-							</div>
-
-							<div>
-								<Label for="fps" class="text-sm">Frame Rate: {fps} FPS</Label>
-								<Slider
-									id="fps"
-									type="single"
-									bind:value={fps}
-									min={30}
-									max={60}
-									step={30}
-									class="mt-2"
-									onValueChange={(value) => {
-										const nextFps = value as 30 | 60;
-										fps = nextFps;
-										handleApplySettings({ fps: nextFps });
-									}}
-								/>
-								<p class="mt-1 text-xs text-muted-foreground">30 FPS for smaller files, 60 FPS for smoother motion</p>
-							</div>
-						</div>
-					</AccordionContent>
-				</AccordionItem>
-
 				<AccordionItem value="timing">
 					<AccordionTrigger>
 						<div class="flex items-center gap-2">
@@ -600,6 +574,96 @@
 					</AccordionContent>
 				</AccordionItem>
 
+				<AccordionItem value="audio">
+					<AccordionTrigger>
+						<div class="flex items-center gap-2">
+							<Music2 class="size-4" />
+							<span>Audio</span>
+						</div>
+					</AccordionTrigger>
+					<AccordionContent>
+						<div class="space-y-4 pt-2">
+							<div>
+								<Label for="music-upload" class="text-sm">Background Music</Label>
+								<Input
+									id="music-upload"
+									type="file"
+									accept="audio/*"
+									class="mt-1.5"
+									onchange={(event) => {
+										const file = (event.currentTarget as HTMLInputElement).files?.[0];
+										if (file) {
+											onMusicUpload(file);
+										}
+									}}
+								/>
+								<p class="mt-1 text-xs text-muted-foreground line-clamp-1">{musicTrackName}</p>
+							</div>
+
+							<div class="flex items-center gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={onMusicToggle}
+									disabled={!hasMusicTrack}
+									class="w-full"
+								>
+									{#if isMusicPlaying}
+										<Pause class="mr-2 size-4" />
+										Pause Music
+									{:else}
+										<Play class="mr-2 size-4" />
+										Play Music
+									{/if}
+								</Button>
+							</div>
+
+							<div>
+								<Label for="music-volume" class="text-sm">Music Volume: {Math.round(musicVolume * 100)}%</Label>
+								<Slider
+									id="music-volume"
+									type="single"
+									bind:value={musicVolume}
+									min={0}
+									max={1}
+									step={0.05}
+									class="mt-2"
+									onValueChange={(value) => {
+										musicVolume = value;
+										handleApplySettings({ musicVolume: value });
+									}}
+								/>
+							</div>
+
+							<div class="flex items-center justify-between">
+								<Label for="music-enabled" class="text-sm">Enable Music in Preview</Label>
+								<Switch
+									id="music-enabled"
+									bind:checked={musicEnabled}
+									onCheckedChange={(checked) => {
+										musicEnabled = checked;
+										handleApplySettings({ musicEnabled: checked });
+									}}
+								/>
+							</div>
+
+							<div class="flex items-center justify-between">
+								<Label for="notification-sound-enabled" class="text-sm"
+									>Enable Notification Sound</Label
+								>
+								<Switch
+									id="notification-sound-enabled"
+									bind:checked={notificationSoundEnabled}
+									onCheckedChange={(checked) => {
+										notificationSoundEnabled = checked;
+										handleApplySettings({ notificationSoundEnabled: checked });
+									}}
+								/>
+							</div>
+							</div>
+						</AccordionContent>
+					</AccordionItem>
+
 				<AccordionItem value="video">
 					<AccordionTrigger>
 						<div class="flex items-center gap-2">
@@ -610,7 +674,52 @@
 					<AccordionContent>
 						<div class="space-y-4 pt-2">
 							<div>
-								<Label for="export-format" class="text-sm">Format</Label>
+								<Label for="resolution" class="text-sm">Format</Label>
+								<Select
+									type="single"
+									bind:value={resolution}
+									items={resolutionOptions}
+									onValueChange={(value) => {
+										resolution = value as CustomizationSettings['resolution'];
+										handleApplySettings({
+											resolution: value as CustomizationSettings['resolution']
+										});
+									}}
+								>
+									<SelectTrigger id="resolution" class="mt-1.5">
+										<span data-slot="select-value" class={selectTriggerTextClass(Boolean(resolution))}>
+											{getOptionLabel(resolutionOptions, resolution, 'Select format')}
+										</span>
+									</SelectTrigger>
+									<SelectContent>
+										{#each resolutionOptions as option}
+											<SelectItem value={option.value} label={option.label}>{option.label}</SelectItem>
+										{/each}
+									</SelectContent>
+								</Select>
+							</div>
+
+							<div>
+								<Label for="fps" class="text-sm">Frame Rate: {fps} FPS</Label>
+								<Slider
+									id="fps"
+									type="single"
+									bind:value={fps}
+									min={24}
+									max={60}
+									step={1}
+									class="mt-2"
+									onValueChange={(value) => {
+										const nextFps = Math.round(value);
+										fps = nextFps;
+										handleApplySettings({ fps: nextFps });
+									}}
+								/>
+								<p class="mt-1 text-xs text-muted-foreground">24-60 FPS export frame rate</p>
+							</div>
+
+							<div>
+								<Label for="export-format" class="text-sm">Container</Label>
 								<Select
 									type="single"
 									bind:value={exportFormat}
@@ -709,19 +818,32 @@
 	</div>
 
 	<div class="flex-shrink-0 border-t border-border bg-card/95 p-4 backdrop-blur-sm">
-		<Button
-			class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg transition-all duration-200 hover:from-purple-700 hover:to-pink-700 hover:shadow-xl"
-			onclick={onGenerateVideo}
-			disabled={isGenerating}
-			size="lg"
-		>
-			{#if isGenerating}
-				<div class="mr-2 h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-				<span>Generating Video...</span>
-			{:else}
-				<Film class="mr-2 size-5" />
-				<span class="font-semibold">Generate Video</span>
-			{/if}
-		</Button>
+		<div class="grid grid-cols-2 gap-2">
+			<Button
+				variant="outline"
+				class="w-full"
+				onclick={onPreviewAnimation}
+				disabled={isGenerating || messages.length === 0}
+				size="lg"
+			>
+				<Play class="mr-2 size-4" />
+				<span class="font-semibold">{previewState === 'video' ? 'Replay' : 'Preview'}</span>
+			</Button>
+
+			<Button
+				class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg transition-all duration-200 hover:from-purple-700 hover:to-pink-700 hover:shadow-xl"
+				onclick={onExportVideo}
+				disabled={isGenerating}
+				size="lg"
+			>
+				{#if isGenerating}
+					<div class="mr-2 h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+					<span>Exporting...</span>
+				{:else}
+					<Download class="mr-2 size-5" />
+					<span class="font-semibold">Export</span>
+				{/if}
+			</Button>
+		</div>
 	</div>
 </div>

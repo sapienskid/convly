@@ -37,7 +37,7 @@ export type BackgroundThemeSetting =
 	| 'pattern1'
 	| 'pattern2'
 	| 'custom';
-export type ResolutionSetting = '720p' | '1080p' | '1440p';
+export type ResolutionSetting = 'vertical-1080x1920';
 export type QualitySetting = 'low' | 'medium' | 'high' | 'ultra';
 export type ExportFormatSetting = 'mp4' | 'webm';
 export type CodecSetting = 'h264' | 'h265' | 'vp9';
@@ -57,12 +57,15 @@ export interface CustomizationSettings {
 	showAvatars: boolean;
 	showTimestamps: boolean;
 	resolution: ResolutionSetting;
-	fps: 30 | 60;
+	fps: number;
 	quality: QualitySetting;
 	messageDuration: number;
 	transitionDuration: number;
 	animationSpeed: number;
 	enableTransitions: boolean;
+	musicEnabled: boolean;
+	musicVolume: number;
+	notificationSoundEnabled: boolean;
 	exportFormat: ExportFormatSetting;
 	codec: CodecSetting;
 	enableCompression: boolean;
@@ -82,13 +85,16 @@ export const defaultCustomizationSettings: CustomizationSettings = {
 	messagePadding: 16,
 	showAvatars: true,
 	showTimestamps: true,
-	resolution: '1080p',
+	resolution: 'vertical-1080x1920',
 	fps: 30,
 	quality: 'high',
 	messageDuration: 2.5,
 	transitionDuration: 0.3,
 	animationSpeed: 1,
 	enableTransitions: true,
+	musicEnabled: true,
+	musicVolume: 0.3,
+	notificationSoundEnabled: true,
 	exportFormat: 'mp4',
 	codec: 'h264',
 	enableCompression: true
