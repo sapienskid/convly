@@ -4,12 +4,15 @@
 		Background,
 		Controls,
 		MiniMap,
+		MarkerType,
 		type Node,
 		type Edge,
 		type NodeTargetEventWithPointer,
 		type NodeEventWithPointer,
 		type PaneEvents,
-		type Connection as FlowConnection
+		type Connection as FlowConnection,
+		type OnConnectStart,
+		type OnConnectEnd
 	} from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
 	import type { Character, Message, Connection, Tool } from '$lib/types';
@@ -20,12 +23,12 @@
 		addCharacterAtPosition, 
 		addMessageAtPosition, 
 		createConnection,
-		deleteElement,
 		deleteConnection,
-		updateCharacter
+		nodeConnectionModes
 	} from '$lib/stores/appStore';
 	import { Button } from '$lib/components/ui/button';
 	import { Trash2 } from 'lucide-svelte/icons';
+	import { get } from 'svelte/store';
 
 	interface Props {
 		characters: Character[];
@@ -59,6 +62,7 @@
 
 	let selectedEdge = $state<string | null>(null);
 	let connectingFrom = $state<string | null>(null);
+	let connectStartNodeId = $state<string | null>(null);
 	let edgeButtonPosition = $state<{ x: number; y: number } | null>(null);
 	let viewport = $state<{ x: number; y: number; zoom: number } | undefined>(undefined);
 
@@ -124,6 +128,15 @@
 			type: 'floating',
 			animated: conn.type === 'flow',
 			style: `stroke: ${conn.color}; stroke-width: ${selectedEdge === conn.id ? '3px' : '2.5px'}; ${conn.type === 'reply' ? 'stroke-dasharray: 6 3;' : ''}`,
+			markerEnd:
+				conn.type === 'flow'
+					? {
+							type: MarkerType.Arrow,
+							color: conn.color,
+							width: 18,
+							height: 18
+						}
+					: undefined,
 			selectable: true,
 			data: {
 				color: conn.color,
@@ -140,6 +153,31 @@
 		return messages.some((m) => m.id === id);
 	}
 
+	function wouldCreateFlowCycle(source: string, target: string) {
+		if (source === target) return true;
+
+		const adjacency = new Map<string, string[]>();
+		for (const conn of connections) {
+			if (conn.type !== 'flow') continue;
+			if (!adjacency.has(conn.from)) adjacency.set(conn.from, []);
+			adjacency.get(conn.from)!.push(conn.to);
+		}
+
+		const visited = new Set<string>();
+		const stack = [target];
+		while (stack.length > 0) {
+			const current = stack.pop()!;
+			if (current === source) return true;
+			if (visited.has(current)) continue;
+			visited.add(current);
+			for (const next of adjacency.get(current) ?? []) {
+				if (!visited.has(next)) stack.push(next);
+			}
+		}
+
+		return false;
+	}
+
 	const validateConnection = (connection: { source?: string | null; target?: string | null }) => {
 		const { source, target } = connection;
 		if (!source || !target) return false;
@@ -149,14 +187,19 @@
 		const sourceIsMessage = isMessageNode(source);
 		const targetIsMessage = isMessageNode(target);
 
-		// Allow character -> message assignments
-		if (sourceIsCharacter && targetIsMessage) {
-			const targetMessage = messages.find((msg) => msg.id === target);
-			if (targetMessage?.characterId && targetMessage.characterId !== source) {
+		// Assignment is undirected in interaction: message <-> speaker.
+		if ((sourceIsCharacter && targetIsMessage) || (sourceIsMessage && targetIsCharacter)) {
+			const messageId = sourceIsMessage ? source : target;
+			const characterId = sourceIsCharacter ? source : target;
+			const message = messages.find((msg) => msg.id === messageId);
+			if (message?.characterId && message.characterId !== characterId) {
 				return false;
 			}
 			const hasDifferentAssignmentEdge = connections.some(
-				(conn) => conn.type === 'assignment' && conn.to === target && conn.from !== source
+				(conn) =>
+					conn.type === 'assignment' &&
+					conn.from === messageId &&
+					conn.to !== characterId
 			);
 			if (hasDifferentAssignmentEdge) {
 				return false;
@@ -164,8 +207,28 @@
 			return true;
 		}
 
-		// Allow message -> message flow connections
+		// Message -> message remains directional.
 		if (sourceIsMessage && targetIsMessage) {
+			if (source === target) return false;
+			const nodeModes = get(nodeConnectionModes);
+			const mode = nodeModes[source] || 'flow';
+
+			if (mode === 'reply') {
+				const sourceMessage = messages.find((msg) => msg.id === source);
+				if (sourceMessage?.replyTo && sourceMessage.replyTo !== target) {
+					return false;
+				}
+				const hasDifferentReplyEdge = connections.some(
+					(conn) => conn.type === 'reply' && conn.from === source && conn.to !== target
+				);
+				return !hasDifferentReplyEdge;
+			}
+
+			const hasSameFlow = connections.some(
+				(conn) => conn.type === 'flow' && conn.from === source && conn.to === target
+			);
+			if (hasSameFlow) return false;
+			if (wouldCreateFlowCycle(source, target)) return false;
 			return true;
 		}
 
@@ -253,14 +316,31 @@
 
 	// Handle connection
 	const handleConnect = (connection: FlowConnection) => {
-		if (connection.source && connection.target) {
-			createConnection(
-				connection.source,
-				connection.target,
-				connection.sourceHandle || undefined,
-				connection.targetHandle || undefined
-			);
+		if (!connection.source || !connection.target) return;
+
+		let source = connection.source;
+		let target = connection.target;
+		let sourceHandle = connection.sourceHandle || undefined;
+		let targetHandle = connection.targetHandle || undefined;
+
+		// Keep drag direction aligned to the node where the connect gesture started.
+		if (connectStartNodeId && source !== connectStartNodeId && target === connectStartNodeId) {
+			[source, target] = [target, source];
+			// Reset handles when swapping so store logic recomputes canonical handle directions.
+			sourceHandle = undefined;
+			targetHandle = undefined;
 		}
+
+		createConnection(source, target, sourceHandle, targetHandle);
+		connectStartNodeId = null;
+	};
+
+	const handleConnectStart: OnConnectStart = (_event, params) => {
+		connectStartNodeId = params.nodeId;
+	};
+
+	const handleConnectEnd: OnConnectEnd = () => {
+		connectStartNodeId = null;
 	};
 
 	// Handle delete edge button
@@ -298,6 +378,8 @@
 		onpaneclick={handlePaneClick}
 		onedgeclick={handleEdgeClick}
 		onconnect={handleConnect}
+		onconnectstart={handleConnectStart}
+		onconnectend={handleConnectEnd}
 		isValidConnection={validateConnection}
 		panOnDrag={selectedTool === 'pan' ? [0, 1, 2] : false}
 		selectionOnDrag={selectedTool === 'select'}

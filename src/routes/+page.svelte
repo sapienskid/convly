@@ -8,15 +8,55 @@
 	import CharacterEditor from '$lib/components/workspace/CharacterEditor.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { ChevronRight, ChevronLeft } from 'lucide-svelte/icons';
+	import { onMount } from 'svelte';
+	import { initializeStore, isInitialized } from '$lib/stores/appStore';
 	
 	let isRightPanelCollapsed = $state(false);
+	
+	onMount(() => {
+		initializeStore();
+	});
 	
 	// Video Controls State
 	let isVideoPlaying = $state(false);
 	let videoCurrentTime = $state(0);
-	let videoDuration = $state(100);
+	const videoDuration = $derived.by(() => {
+		if ($messages.length === 0) return 0;
+		const transitionCount = Math.max($messages.length - 1, 0);
+		const transitionTime = $customizeSettings.enableTransitions
+			? transitionCount * $customizeSettings.transitionDuration
+			: 0;
+		return $messages.length * $customizeSettings.messageDuration + transitionTime;
+	});
+
+	$effect(() => {
+		if (videoCurrentTime > videoDuration) {
+			videoCurrentTime = videoDuration;
+		}
+	});
+
+	$effect(() => {
+		if (!isVideoPlaying || $previewState !== 'video' || videoDuration <= 0) return;
+
+		const fps = $customizeSettings.fps;
+		const speed = Math.max($customizeSettings.animationSpeed, 0.1);
+		const step = (1 / fps) * speed;
+		const interval = window.setInterval(() => {
+			videoCurrentTime = Math.min(videoCurrentTime + step, videoDuration);
+			if (videoCurrentTime >= videoDuration) {
+				isVideoPlaying = false;
+				window.clearInterval(interval);
+			}
+		}, 1000 / fps);
+
+		return () => window.clearInterval(interval);
+	});
 
 	function handleVideoPlayPause() {
+		if (videoDuration <= 0) return;
+		if (videoCurrentTime >= videoDuration) {
+			videoCurrentTime = 0;
+		}
 		isVideoPlaying = !isVideoPlaying;
 	}
 
@@ -26,12 +66,40 @@
 	}
 
 	function handleVideoDownload() {
-		// TODO: Implement video download
-		console.log('Downloading video...');
+		const exportData = {
+			exportedAt: new Date().toISOString(),
+			renderPlan: {
+				format: $customizeSettings.exportFormat,
+				codec: $customizeSettings.codec,
+				resolution: $customizeSettings.resolution,
+				fps: $customizeSettings.fps,
+				quality: $customizeSettings.quality,
+				durationSeconds: videoDuration
+			},
+			project: {
+				characters: $characters,
+				messages: $messages,
+				connections: $connections,
+				customizeSettings: $customizeSettings
+			}
+		};
+
+		const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+			type: 'application/json'
+		});
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = `convly-render-plan-${Date.now()}.json`;
+		link.click();
+		URL.revokeObjectURL(url);
 	}
 
 	function handleVideoSeek(time: number) {
-		videoCurrentTime = time;
+		videoCurrentTime = Math.max(0, Math.min(time, videoDuration));
+		if (videoCurrentTime >= videoDuration) {
+			isVideoPlaying = false;
+		}
 	}
 
 	import {
@@ -180,7 +248,15 @@
 
 <svelte:window onkeydown={handleKeyboardShortcut} />
 
-<div class="flex h-screen w-full overflow-hidden bg-background">
+{#if !$isInitialized}
+	<div class="flex h-screen w-full items-center justify-center bg-background">
+		<div class="flex flex-col items-center gap-4">
+			<div class="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+			<p class="text-muted-foreground">Loading project...</p>
+		</div>
+	</div>
+{:else}
+	<div class="flex h-screen w-full overflow-hidden bg-background">
 	<!-- Left Sidebar -->
 	<LeftSidebar
 		selectedTool={$selectedTool}
@@ -285,7 +361,7 @@
 	</div>
 
 	<!-- Right Panel - Customization -->
-	<div class="relative flex-shrink-0">
+	<div class="relative h-full flex-shrink-0">
 		<!-- Toggle Button -->
 		<Button
 			variant="ghost"
@@ -301,7 +377,7 @@
 		</Button>
 
 		<!-- Panel Content -->
-		<div class="{isRightPanelCollapsed ? 'w-0' : 'w-80'} overflow-hidden transition-all duration-300">
+		<div class="{isRightPanelCollapsed ? 'w-0' : 'w-80'} h-full overflow-hidden transition-all duration-300">
 			<RightPanel
 				characters={$characters}
 				messages={$messages}
@@ -322,3 +398,4 @@
 		onClose={handleCharacterEditorClose}
 	/>
 </div>
+{/if}

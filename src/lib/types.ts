@@ -28,5 +28,71 @@ export interface Connection {
 	targetHandle?: string;
 }
 
+export type FontWeightSetting = 'light' | 'normal' | 'medium' | 'semibold' | 'bold';
+export type BackgroundThemeSetting =
+	| 'none'
+	| 'gradient1'
+	| 'gradient2'
+	| 'gradient3'
+	| 'pattern1'
+	| 'pattern2'
+	| 'custom';
+export type ResolutionSetting = '720p' | '1080p' | '1440p';
+export type QualitySetting = 'low' | 'medium' | 'high' | 'ultra';
+export type ExportFormatSetting = 'mp4' | 'webm';
+export type CodecSetting = 'h264' | 'h265' | 'vp9';
+
+export interface CustomizationSettings {
+	channelName: string;
+	backgroundColor: string;
+	backgroundImage: string;
+	backgroundTheme: BackgroundThemeSetting;
+	primaryColor: string;
+	textColor: string;
+	fontFamily: string;
+	fontSize: number;
+	fontWeight: FontWeightSetting;
+	messageSpacing: number;
+	messagePadding: number;
+	showAvatars: boolean;
+	showTimestamps: boolean;
+	resolution: ResolutionSetting;
+	fps: 30 | 60;
+	quality: QualitySetting;
+	messageDuration: number;
+	transitionDuration: number;
+	animationSpeed: number;
+	enableTransitions: boolean;
+	exportFormat: ExportFormatSetting;
+	codec: CodecSetting;
+	enableCompression: boolean;
+}
+
+export const defaultCustomizationSettings: CustomizationSettings = {
+	channelName: 'general',
+	backgroundColor: '#313338',
+	backgroundImage: '',
+	backgroundTheme: 'none',
+	primaryColor: '#5865f2',
+	textColor: '#dcddde',
+	fontFamily: 'Inter',
+	fontSize: 16,
+	fontWeight: 'normal',
+	messageSpacing: 12,
+	messagePadding: 16,
+	showAvatars: true,
+	showTimestamps: true,
+	resolution: '1080p',
+	fps: 30,
+	quality: 'high',
+	messageDuration: 2.5,
+	transitionDuration: 0.3,
+	animationSpeed: 1,
+	enableTransitions: true,
+	exportFormat: 'mp4',
+	codec: 'h264',
+	enableCompression: true
+};
+
 export type Tool = 'select' | 'character' | 'message' | 'pan';
 export type PreviewState = 'preview' | 'loading' | 'video';

@@ -1,8 +1,16 @@
 import { writable, derived, get } from 'svelte/store';
-import type { Character, Message, Connection, Tool, PreviewState } from '$lib/types';
+import {
+	defaultCustomizationSettings,
+	type Character,
+	type Message,
+	type Connection,
+	type Tool,
+	type PreviewState,
+	type CustomizationSettings
+} from '$lib/types';
+import { loadFromIndexedDB, saveToIndexedDB } from '$lib/utils/indexedDB';
 
-// Core entity stores
-export const characters = writable<Character[]>([
+const demoCharacters: Character[] = [
 	{
 		id: 'char-demo-1',
 		username: 'Alex Chen',
@@ -17,9 +25,9 @@ export const characters = writable<Character[]>([
 		roleColor: '#8b5cf6',
 		position: { x: 100, y: 300 }
 	}
-]);
+];
 
-export const messages = writable<Message[]>([
+const demoMessages: Message[] = [
 	{
 		id: 'msg-demo-1',
 		characterId: 'char-demo-1',
@@ -41,27 +49,27 @@ export const messages = writable<Message[]>([
 		position: { x: 400, y: 480 },
 		timestamp: new Date().toISOString()
 	}
-]);
+];
 
-export const connections = writable<Connection[]>([
+const demoConnections: Connection[] = [
 	{
 		id: 'conn-demo-1',
-		from: 'char-demo-1',
-		to: 'msg-demo-1',
+		from: 'msg-demo-1',
+		to: 'char-demo-1',
 		type: 'assignment',
 		color: '#3b82f6'
 	},
 	{
 		id: 'conn-demo-2',
-		from: 'char-demo-2',
-		to: 'msg-demo-2',
+		from: 'msg-demo-2',
+		to: 'char-demo-2',
 		type: 'assignment',
 		color: '#8b5cf6'
 	},
 	{
 		id: 'conn-demo-3',
-		from: 'char-demo-1',
-		to: 'msg-demo-3',
+		from: 'msg-demo-3',
+		to: 'char-demo-1',
 		type: 'assignment',
 		color: '#3b82f6'
 	},
@@ -79,7 +87,225 @@ export const connections = writable<Connection[]>([
 		type: 'flow',
 		color: '#f59e0b'
 	}
-]);
+];
+
+export const isInitialized = writable(false);
+
+export const characters = writable<Character[]>([]);
+export const messages = writable<Message[]>([]);
+export const connections = writable<Connection[]>([]);
+
+function mergeCustomizationSettings(
+	settings?: Partial<CustomizationSettings> | Record<string, unknown> | null
+): CustomizationSettings {
+	return {
+		...defaultCustomizationSettings,
+		...(settings ?? {})
+	} as CustomizationSettings;
+}
+
+const flowColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
+
+function getMessageToMessageHandles(fromMessage: Message, toMessage: Message) {
+	const dx = toMessage.position.x - fromMessage.position.x;
+	const dy = toMessage.position.y - fromMessage.position.y;
+	const absDx = Math.abs(dx);
+	const absDy = Math.abs(dy);
+
+	if (absDx >= absDy) {
+		return {
+			sourceHandle: 'source-' + (dx >= 0 ? 'right' : 'left'),
+			targetHandle: 'target-' + (dx >= 0 ? 'left' : 'right')
+		};
+	}
+
+	return {
+		sourceHandle: 'source-' + (dy >= 0 ? 'bottom' : 'top'),
+		targetHandle: 'target-' + (dy >= 0 ? 'top' : 'bottom')
+	};
+}
+
+function getMessageToCharacterHandles(message: Message, character: Character) {
+	const dx = character.position.x - message.position.x;
+	const dy = character.position.y - message.position.y;
+	const absDx = Math.abs(dx);
+	const absDy = Math.abs(dy);
+
+	const sourceHandle =
+		absDx >= absDy
+			? 'source-' + (dx >= 0 ? 'right' : 'left')
+			: 'source-' + (dy >= 0 ? 'bottom' : 'top');
+
+	return {
+		sourceHandle,
+		targetHandle: 'target'
+	};
+}
+
+function wouldCreateFlowCycle(from: string, to: string, existingConnections: Connection[]): boolean {
+	if (from === to) return true;
+
+	const adjacency = new Map<string, string[]>();
+	for (const conn of existingConnections) {
+		if (conn.type !== 'flow') continue;
+		if (!adjacency.has(conn.from)) adjacency.set(conn.from, []);
+		adjacency.get(conn.from)!.push(conn.to);
+	}
+
+	const visited = new Set<string>();
+	const stack = [to];
+
+	while (stack.length > 0) {
+		const current = stack.pop()!;
+		if (current === from) return true;
+		if (visited.has(current)) continue;
+		visited.add(current);
+		for (const next of adjacency.get(current) ?? []) {
+			if (!visited.has(next)) stack.push(next);
+		}
+	}
+
+	return false;
+}
+
+function normalizeConnections(
+	rawConnections: Connection[],
+	allCharacters: Character[],
+	allMessages: Message[]
+): Connection[] {
+	const characterMap = new Map(allCharacters.map((character) => [character.id, character]));
+	const messageMap = new Map(allMessages.map((message) => [message.id, message]));
+	const normalized: Connection[] = [];
+	const seen = new Set<string>();
+
+	const addNormalizedConnection = (connection: Connection) => {
+		const key = `${connection.type}:${connection.from}:${connection.to}`;
+		if (seen.has(key)) return;
+		seen.add(key);
+		normalized.push(connection);
+	};
+
+	for (const conn of rawConnections) {
+		if (conn.type === 'assignment') {
+			const fromMessage = messageMap.get(conn.from);
+			const toCharacter = characterMap.get(conn.to);
+			if (fromMessage && toCharacter) {
+				const handles = getMessageToCharacterHandles(fromMessage, toCharacter);
+				addNormalizedConnection({
+					...conn,
+					from: fromMessage.id,
+					to: toCharacter.id,
+					sourceHandle: conn.sourceHandle ?? handles.sourceHandle,
+					targetHandle: conn.targetHandle ?? handles.targetHandle,
+					color: conn.color || toCharacter.roleColor
+				});
+				continue;
+			}
+
+			// Legacy migration: character -> message to message -> character.
+			const legacyFromCharacter = characterMap.get(conn.from);
+			const legacyToMessage = messageMap.get(conn.to);
+			if (legacyFromCharacter && legacyToMessage) {
+				const handles = getMessageToCharacterHandles(legacyToMessage, legacyFromCharacter);
+				addNormalizedConnection({
+					...conn,
+					from: legacyToMessage.id,
+					to: legacyFromCharacter.id,
+					sourceHandle: handles.sourceHandle,
+					targetHandle: handles.targetHandle,
+					color: conn.color || legacyFromCharacter.roleColor
+				});
+			}
+			continue;
+		}
+
+		if (conn.type === 'flow' || conn.type === 'reply') {
+			const fromMessage = messageMap.get(conn.from);
+			const toMessage = messageMap.get(conn.to);
+			if (!fromMessage || !toMessage || fromMessage.id === toMessage.id) continue;
+			if (conn.type === 'flow' && wouldCreateFlowCycle(fromMessage.id, toMessage.id, normalized)) {
+				continue;
+			}
+			const handles = getMessageToMessageHandles(fromMessage, toMessage);
+			addNormalizedConnection({
+				...conn,
+				from: fromMessage.id,
+				to: toMessage.id,
+				sourceHandle: conn.sourceHandle ?? handles.sourceHandle,
+				targetHandle: conn.targetHandle ?? handles.targetHandle
+			});
+		}
+	}
+
+	// Ensure every explicitly assigned message has a visible assignment edge.
+	for (const message of allMessages) {
+		if (!message.characterId) continue;
+		const character = characterMap.get(message.characterId);
+		if (!character) continue;
+		const handles = getMessageToCharacterHandles(message, character);
+		addNormalizedConnection({
+			id: `conn-assign-${message.id}-${character.id}`,
+			from: message.id,
+			to: character.id,
+			type: 'assignment',
+			color: character.roleColor,
+			sourceHandle: handles.sourceHandle,
+			targetHandle: handles.targetHandle
+		});
+	}
+
+	// Keep reply edges in sync with replyTo metadata.
+	for (const message of allMessages) {
+		if (!message.replyTo || !messageMap.has(message.replyTo) || message.replyTo === message.id) continue;
+		const targetMessage = messageMap.get(message.replyTo)!;
+		const handles = getMessageToMessageHandles(message, targetMessage);
+		addNormalizedConnection({
+			id: `conn-reply-${message.id}-${targetMessage.id}`,
+			from: message.id,
+			to: targetMessage.id,
+			type: 'reply',
+			color: '#94a3b8',
+			sourceHandle: handles.sourceHandle,
+			targetHandle: handles.targetHandle
+		});
+	}
+
+	return normalized;
+}
+
+export async function initializeStore() {
+	if (typeof window === 'undefined') return;
+	
+	try {
+		const data = await loadFromIndexedDB();
+
+		const loadedCharacters =
+			data.characters && data.characters.length > 0 ? data.characters : demoCharacters;
+		const loadedMessages =
+			data.messages && data.messages.length > 0 ? data.messages : demoMessages;
+		const loadedConnections =
+			data.connections && data.connections.length > 0 ? data.connections : demoConnections;
+		const normalizedConnections = normalizeConnections(
+			loadedConnections,
+			loadedCharacters,
+			loadedMessages
+		);
+
+		characters.set(loadedCharacters);
+		messages.set(loadedMessages);
+		connections.set(normalizedConnections);
+		
+		customizeSettings.set(mergeCustomizationSettings(data.customizeSettings));
+	} catch (error) {
+		console.error('Failed to load from IndexedDB, using demo data:', error);
+		characters.set(demoCharacters);
+		messages.set(demoMessages);
+		connections.set(normalizeConnections(demoConnections, demoCharacters, demoMessages));
+		customizeSettings.set(defaultCustomizationSettings);
+	}
+	
+	isInitialized.set(true);
+}
 
 // UI state stores
 export const selectedTool = writable<Tool>('select');
@@ -94,69 +320,42 @@ export const nodeConnectionModes = writable<Record<string, 'flow' | 'reply'>>({}
 export const previewState = writable<PreviewState>('preview');
 export const isGenerating = writable<boolean>(false);
 
-// Load settings from localStorage if available
-const loadSettings = () => {
-	if (typeof window !== 'undefined') {
-		const saved = localStorage.getItem('convly_customizeSettings');
-		if (saved) {
-			try {
-				return JSON.parse(saved);
-			} catch (e) {
-				console.error('Failed to load settings:', e);
-			}
-		}
+export const customizeSettings = writable<CustomizationSettings>(defaultCustomizationSettings);
+
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function debouncedSave(key: string, value: any) {
+	if (saveTimeout) {
+		clearTimeout(saveTimeout);
 	}
-	return null;
-};
+	saveTimeout = setTimeout(() => {
+		saveToIndexedDB(key as any, value).catch(console.error);
+	}, 300);
+}
 
-const defaultSettings = {
-	// Discord/Chat Room Settings
-	channelName: 'general',
-	// Color Settings
-	backgroundColor: '#313338',
-	backgroundImage: '',
-	backgroundTheme: 'none',
-	primaryColor: '#5865f2',
-	secondaryColor: '#3ba55d',
-	textColor: '#dcddde',
-	// Typography Settings
-	fontFamily: 'Inter',
-	fontSize: 16,
-	fontWeight: 'normal',
-	// Layout Settings
-	messageSpacing: 12,
-	messagePadding: 16,
-	messageAlignment: 'left',
-	showAvatars: true,
-	showTimestamps: true,
-	// Video Quality Settings
-	resolution: '1080p',
-	fps: 30,
-	quality: 'high',
-	// Timing Settings
-	messageDuration: 2.5,
-	transitionDuration: 0.3,
-	// Animation Settings
-	animationSpeed: 1,
-	enableTransitions: true,
-	animationStyle: 'smooth',
-	// Audio Settings
-	enableAudio: false,
-	backgroundMusicVolume: 70,
-	soundEffectsVolume: 50,
-	// Export Settings
-	exportFormat: 'mp4',
-	codec: 'h264',
-	enableCompression: true
-};
-
-// Customization settings store with persistence
-export const customizeSettings = writable(loadSettings() || defaultSettings);
-
-// Save to localStorage whenever settings change
 if (typeof window !== 'undefined') {
-	customizeSettings.subscribe((settings) => {
-		localStorage.setItem('convly_customizeSettings', JSON.stringify(settings));
+	characters.subscribe((value) => {
+		if (get(isInitialized)) {
+			debouncedSave('characters', value);
+		}
+	});
+	
+	messages.subscribe((value) => {
+		if (get(isInitialized)) {
+			debouncedSave('messages', value);
+		}
+	});
+	
+	connections.subscribe((value) => {
+		if (get(isInitialized)) {
+			debouncedSave('connections', value);
+		}
+	});
+	
+	customizeSettings.subscribe((value) => {
+		if (get(isInitialized)) {
+			debouncedSave('customizeSettings', value);
+		}
 	});
 }
 
@@ -256,49 +455,25 @@ function recalculateHandlesForNode(nodeId: string) {
 	const msgs = get(messages);
 	connections.update((conns) => {
 		return conns.map((conn) => {
-			let changed = false;
 			// Only adjust flow edges or assignment edges where dynamic positioning matters
 			if (conn.type === 'flow' && (conn.from === nodeId || conn.to === nodeId)) {
 				const fromMsg = msgs.find((m) => m.id === conn.from);
 				const toMsg = msgs.find((m) => m.id === conn.to);
 				if (fromMsg && toMsg) {
-					const dx = toMsg.position.x - fromMsg.position.x;
-					const dy = toMsg.position.y - fromMsg.position.y;
-					const absDx = Math.abs(dx);
-					const absDy = Math.abs(dy);
-					let newSourceHandle = conn.sourceHandle;
-					let newTargetHandle = conn.targetHandle;
-					if (absDx >= absDy) {
-						newSourceHandle = 'source-' + (dx >= 0 ? 'right' : 'left');
-						newTargetHandle = 'target-' + (dx >= 0 ? 'left' : 'right');
-					} else {
-						newSourceHandle = 'source-' + (dy >= 0 ? 'bottom' : 'top');
-						newTargetHandle = 'target-' + (dy >= 0 ? 'top' : 'bottom');
-					}
+					const { sourceHandle: newSourceHandle, targetHandle: newTargetHandle } =
+						getMessageToMessageHandles(fromMsg, toMsg);
 					if (newSourceHandle !== conn.sourceHandle || newTargetHandle !== conn.targetHandle) {
-						changed = true;
 						return { ...conn, sourceHandle: newSourceHandle, targetHandle: newTargetHandle };
 					}
 				}
 			} else if (conn.type === 'assignment' && (conn.from === nodeId || conn.to === nodeId)) {
-				// Assignment: character -> message only stored as from=character to=message
-				const char = chars.find((c) => c.id === conn.from);
-				const msg = msgs.find((m) => m.id === conn.to);
-				if (char && msg) {
-					// Pick nearest side of message to character while keeping character handle constant
-					const dx = msg.position.x - char.position.x;
-					const dy = msg.position.y - char.position.y;
-					const absDx = Math.abs(dx);
-					const absDy = Math.abs(dy);
-					let newTargetHandle = conn.targetHandle;
-					if (absDx >= absDy) {
-						newTargetHandle = 'target-' + (dx >= 0 ? 'left' : 'right');
-					} else {
-						newTargetHandle = 'target-' + (dy >= 0 ? 'top' : 'bottom');
-					}
-					if (newTargetHandle !== conn.targetHandle) {
-						changed = true;
-						return { ...conn, targetHandle: newTargetHandle, sourceHandle: 'source' };
+				// Assignment is normalized as message -> character.
+				const msg = msgs.find((m) => m.id === conn.from);
+				const char = chars.find((c) => c.id === conn.to);
+				if (msg && char) {
+					const { sourceHandle, targetHandle } = getMessageToCharacterHandles(msg, char);
+					if (sourceHandle !== conn.sourceHandle || targetHandle !== conn.targetHandle) {
+						return { ...conn, sourceHandle, targetHandle };
 					}
 				}
 			}
@@ -317,29 +492,30 @@ function propagateSpeakerAssignments() {
 		return;
 	}
 
-	// First, identify messages with DIRECT character assignments (via assignment connections)
+	// Direct assignments are explicit message -> speaker assignment edges.
 	const directAssignments = new Set<string>();
 	for (const conn of allConnections) {
 		if (conn.type === 'assignment') {
-			directAssignments.add(conn.to); // 'to' is the message ID
+			directAssignments.add(conn.from); // normalized as from=message to=character
 		}
 	}
 
-	// Build a bidirectional adjacency list for flow connections so we can traverse upstream/downstream paths
+	// Build directed adjacency list from flow edges (from -> to).
 	const adjacency = new Map<string, string[]>();
+	const inDegree = new Map<string, number>();
+	for (const message of allMessages) {
+		inDegree.set(message.id, 0);
+	}
+
 	for (const conn of allConnections) {
 		if (conn.type !== 'flow') continue;
 		if (!adjacency.has(conn.from)) adjacency.set(conn.from, []);
-		if (!adjacency.has(conn.to)) adjacency.set(conn.to, []);
 		adjacency.get(conn.from)!.push(conn.to);
-		adjacency.get(conn.to)!.push(conn.from);
+		inDegree.set(conn.to, (inDegree.get(conn.to) || 0) + 1);
 	}
 
 	const messageMap = new Map(allMessages.map((msg) => [msg.id, msg]));
-	const finalAssignments = new Map<string, string>(); // messageId -> characterId
-
-	// Track all messages that are in the flow network
-	const messagesInFlowNetwork = new Set<string>(adjacency.keys());
+	const finalAssignments = new Map<string, string>();
 
 	const topmostCharacter = allCharacters.reduce<Character | null>(
 		(topmost, current) =>
@@ -348,93 +524,60 @@ function propagateSpeakerAssignments() {
 	);
 	const topmostCharacterId = topmostCharacter?.id;
 
-	const visited = new Set<string>();
-
-	// Process each connected component in the flow network
-	for (const startId of adjacency.keys()) {
-		if (visited.has(startId)) {
-			continue;
+	// Queue starts with explicitly assigned messages.
+	const propagationQueue: Array<{ id: string; charId: string }> = [];
+	for (const messageId of directAssignments) {
+		const message = messageMap.get(messageId);
+		if (message?.characterId) {
+			finalAssignments.set(messageId, message.characterId);
+			propagationQueue.push({ id: messageId, charId: message.characterId });
 		}
+	}
 
-		// Collect the connected component
-		const component: string[] = [];
-		const stack = [startId];
-		while (stack.length > 0) {
-			const currentId = stack.pop()!;
-			if (visited.has(currentId)) continue;
-			visited.add(currentId);
-			component.push(currentId);
-			for (const neighbor of adjacency.get(currentId) ?? []) {
-				if (!visited.has(neighbor)) {
-					stack.push(neighbor);
-				}
-			}
-		}
-
-		if (component.length === 0) {
-			continue;
-		}
-
-		// Find seed messages with direct character assignments in this component
-		const seeds: Array<{ id: string; charId: string }> = [];
-		for (const nodeId of component) {
-			const msg = messageMap.get(nodeId);
-			if (msg?.characterId && directAssignments.has(nodeId)) {
-				seeds.push({ id: nodeId, charId: msg.characterId });
-				finalAssignments.set(nodeId, msg.characterId);
-			}
-		}
-
-		// If no seeds in this component, use topmost character as fallback
-		if (seeds.length === 0) {
-			if (!topmostCharacterId) {
-				continue;
-			}
-			const fallbackId = component[0];
-			seeds.push({ id: fallbackId, charId: topmostCharacterId });
-			finalAssignments.set(fallbackId, topmostCharacterId);
-		}
-
-		// Propagate from seeds to all connected messages
-		const propagationQueue: Array<{ id: string; charId: string }> = [...seeds];
-		const seen = new Set<string>(seeds.map(s => s.id));
-
-		while (propagationQueue.length > 0) {
-			const { id, charId } = propagationQueue.shift()!;
-			for (const neighbor of adjacency.get(id) ?? []) {
-				if (seen.has(neighbor)) {
-					continue;
-				}
-				const neighborMsg = messageMap.get(neighbor);
-				if (!neighborMsg) {
-					continue;
-				}
-				seen.add(neighbor);
-				
-				// If neighbor has direct assignment, use that and propagate it
-				if (directAssignments.has(neighbor) && neighborMsg.characterId) {
-					finalAssignments.set(neighbor, neighborMsg.characterId);
-					propagationQueue.push({ id: neighbor, charId: neighborMsg.characterId });
-				} else {
-					// Otherwise inherit from parent
-					finalAssignments.set(neighbor, charId);
-					propagationQueue.push({ id: neighbor, charId });
-				}
+	// If no explicit assignment exists for a flow root, seed with fallback character.
+	if (propagationQueue.length === 0 && topmostCharacterId) {
+		for (const message of allMessages) {
+			const outgoing = adjacency.get(message.id);
+			const hasOutgoing = Boolean(outgoing && outgoing.length > 0);
+			const hasIncoming = (inDegree.get(message.id) || 0) > 0;
+			if (hasOutgoing && !hasIncoming) {
+				finalAssignments.set(message.id, topmostCharacterId);
+				propagationQueue.push({ id: message.id, charId: topmostCharacterId });
 			}
 		}
 	}
 
-	// Update all messages: set assignments for those in network, clear for those not
+	while (propagationQueue.length > 0) {
+		const { id, charId } = propagationQueue.shift()!;
+		for (const nextId of adjacency.get(id) ?? []) {
+			const nextMessage = messageMap.get(nextId);
+			if (!nextMessage) continue;
+
+			if (directAssignments.has(nextId) && nextMessage.characterId) {
+				if (finalAssignments.get(nextId) !== nextMessage.characterId) {
+					finalAssignments.set(nextId, nextMessage.characterId);
+					propagationQueue.push({ id: nextId, charId: nextMessage.characterId });
+				}
+				continue;
+			}
+
+			if (finalAssignments.get(nextId) !== charId) {
+				finalAssignments.set(nextId, charId);
+				propagationQueue.push({ id: nextId, charId });
+			}
+		}
+	}
+
+	// Apply assignments. Direct assignments remain untouched.
 	messages.update((existing) =>
 		existing.map((msg) => {
 			if (directAssignments.has(msg.id)) {
-				// Keep direct assignments unchanged
 				return msg;
-			} else if (finalAssignments.has(msg.id)) {
-				// Set propagated assignment
+			}
+			if (finalAssignments.has(msg.id)) {
 				return { ...msg, characterId: finalAssignments.get(msg.id) };
-			} else if (msg.characterId && !directAssignments.has(msg.id)) {
-				// Clear speaker if message is not directly assigned and not in propagated network
+			}
+			if (msg.characterId) {
 				return { ...msg, characterId: undefined };
 			}
 			return msg;
@@ -457,7 +600,7 @@ export function deleteMessage(id: string) {
 
 // Connection actions
 export function addConnection(connection: Omit<Connection, 'id'>): string {
-	const id = `conn-${Date.now()}`;
+	const id = `conn-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 	const newConnection = { ...connection, id };
 	connections.update((conns) => [...conns, newConnection]);
 	return id;
@@ -469,7 +612,7 @@ export function deleteConnection(id: string) {
 
 	if (connection && connection.type === 'assignment') {
 		const msgs = get(messages);
-		const message = msgs.find((m) => m.id === connection.to);
+		const message = msgs.find((m) => m.id === connection.from);
 		if (message) {
 			updateMessage(message.id, { characterId: undefined });
 		}
@@ -477,8 +620,8 @@ export function deleteConnection(id: string) {
 
 	if (connection && connection.type === 'reply') {
 		const msgs = get(messages);
-		const message = msgs.find((m) => m.id === connection.to);
-		if (message?.replyTo === connection.from) {
+		const message = msgs.find((m) => m.id === connection.from);
+		if (message?.replyTo === connection.to) {
 			updateMessage(message.id, { replyTo: undefined }, true);
 		}
 	}
@@ -556,7 +699,20 @@ export function addMessageForCharacter(characterId: string): string {
 	};
 
 	const id = addMessage(newMessage);
+	const { sourceHandle, targetHandle } = getMessageToCharacterHandles(
+		{ ...newMessage, id },
+		character
+	);
+	addConnection({
+		from: id,
+		to: character.id,
+		type: 'assignment',
+		color: character.roleColor,
+		sourceHandle,
+		targetHandle
+	});
 	selectedElement.set(id);
+	propagateSpeakerAssignments();
 	return id;
 }
 
@@ -569,16 +725,15 @@ export function createConnection(
 	const conns = get(connections);
 	const chars = get(characters);
 	const msgs = get(messages);
-	// Get the connection mode for the source node
 	const nodeModes = get(nodeConnectionModes);
 	const mode = nodeModes[from] || 'flow';
 
 	if (from === to) return;
 
-	const fromElement = chars.find((c) => c.id === from) || msgs.find((m) => m.id === from);
-	const toElement = chars.find((c) => c.id === to) || msgs.find((m) => m.id === to);
-
-	if (!fromElement || !toElement) return;
+	const fromCharacter = chars.find((c) => c.id === from);
+	const toCharacter = chars.find((c) => c.id === to);
+	const fromMessage = msgs.find((m) => m.id === from);
+	const toMessage = msgs.find((m) => m.id === to);
 
 	let type: 'flow' | 'assignment' | 'reply' = 'flow';
 	let color = 'hsl(var(--muted-foreground))';
@@ -587,131 +742,71 @@ export function createConnection(
 	let finalSourceHandle = sourceHandle;
 	let finalTargetHandle = targetHandle;
 
-	const getDefaultMessageTargetHandle = (sourceNode: Character | Message, targetMessage: Message) => {
-		const verticalThreshold = 40;
-		const horizontalDiff = sourceNode.position.x - targetMessage.position.x;
-		const verticalDiff = sourceNode.position.y - targetMessage.position.y;
+	// Undirected assignment: message <-> speaker gets normalized to message -> speaker.
+	if ((fromMessage && toCharacter) || (toMessage && fromCharacter)) {
+		const isCanonicalDirection = Boolean(fromMessage && toCharacter);
+		const message = fromMessage ?? toMessage!;
+		const character = toCharacter ?? fromCharacter!;
+		type = 'assignment';
+		color = character.roleColor;
+		finalFrom = message.id;
+		finalTo = character.id;
 
-		if (verticalDiff < -verticalThreshold) return 'target-top';
-		if (verticalDiff > verticalThreshold) return 'target-bottom';
-		return horizontalDiff <= 0 ? 'target-left' : 'target-right';
-	};
-
-	// Character to Message = Assignment connection (allowed)
-		if ('username' in fromElement && 'text' in toElement) {
-			type = 'assignment';
-			color = fromElement.roleColor;
-
-			// Check if message already has a speaker assignment - prevent multiple speakers
-			const message = msgs.find((m) => m.id === finalTo);
-			if (message && message.characterId && message.characterId !== fromElement.id) {
-				return;
-			}
-
-			// Check existing assignment edges to ensure uniqueness
-			const existingAssignment = conns.find(
-				(connection) => connection.type === 'assignment' && connection.to === finalTo
-			);
-			if (existingAssignment && existingAssignment.from !== finalFrom) {
-				return;
-			}
-
-			updateMessage(to, { characterId: from });
-			if (!finalSourceHandle) {
-				finalSourceHandle = 'source';
-			}
-			if (!finalTargetHandle) {
-				finalTargetHandle = getDefaultMessageTargetHandle(fromElement, toElement);
-			}
+		if (message.characterId && message.characterId !== character.id) {
+			return;
 		}
-	// Message to Character = NOT ALLOWED now per new rules
-	else if ('text' in fromElement && 'username' in toElement) {
-		console.log('Message to character connections are not allowed');
-		return;
+
+		const existingAssignment = conns.find(
+			(connection) => connection.type === 'assignment' && connection.from === message.id
+		);
+		if (existingAssignment && existingAssignment.to !== character.id) {
+			return;
+		}
+
+		updateMessage(message.id, { characterId: character.id });
+		const handles = getMessageToCharacterHandles(message, character);
+		finalSourceHandle = isCanonicalDirection ? sourceHandle ?? handles.sourceHandle : handles.sourceHandle;
+		finalTargetHandle = isCanonicalDirection ? targetHandle ?? handles.targetHandle : handles.targetHandle;
 	}
 	// Message to Message connections
-	else if ('text' in fromElement && 'text' in toElement) {
-		const chooseHandles = () => {
-			const dx = toElement.position.x - fromElement.position.x;
-			const dy = toElement.position.y - fromElement.position.y;
-			const absDx = Math.abs(dx);
-			const absDy = Math.abs(dy);
-
-			if (absDx >= absDy) {
-				finalSourceHandle = 'source-' + (dx >= 0 ? 'right' : 'left');
-				finalTargetHandle = 'target-' + (dx >= 0 ? 'left' : 'right');
-			} else {
-				finalSourceHandle = 'source-' + (dy >= 0 ? 'bottom' : 'top');
-				finalTargetHandle = 'target-' + (dy >= 0 ? 'top' : 'bottom');
-			}
-		};
+	else if (fromMessage && toMessage) {
+		const handles = getMessageToMessageHandles(fromMessage, toMessage);
+		finalSourceHandle = sourceHandle ?? handles.sourceHandle;
+		finalTargetHandle = targetHandle ?? handles.targetHandle;
 
 		if (mode === 'reply') {
 			type = 'reply';
 			color = '#94a3b8';
-
-			const targetMessage = msgs.find((m) => m.id === finalTo);
-			if (!targetMessage) {
-				return;
-			}
-
-			if (targetMessage.replyTo && targetMessage.replyTo !== finalFrom) {
+			// Reply remains directional: source message replies to target message.
+			if (fromMessage.replyTo && fromMessage.replyTo !== toMessage.id) {
 				return;
 			}
 
 			const existingReplyEdge = conns.find(
-				(connection) => connection.type === 'reply' && connection.to === finalTo
+				(connection) => connection.type === 'reply' && connection.from === fromMessage.id
 			);
-			if (existingReplyEdge && existingReplyEdge.from !== finalFrom) {
+			if (existingReplyEdge && existingReplyEdge.to !== toMessage.id) {
 				return;
 			}
 
-			updateMessage(finalTo, { replyTo: finalFrom }, true);
-
-			if (!finalSourceHandle || !finalTargetHandle) {
-				chooseHandles();
-			} else {
-				const sameAxis = (
-					(finalSourceHandle.endsWith('left') && finalTargetHandle.endsWith('left')) ||
-					(finalSourceHandle.endsWith('right') && finalTargetHandle.endsWith('right')) ||
-					(finalSourceHandle.endsWith('top') && finalTargetHandle.endsWith('top')) ||
-					(finalSourceHandle.endsWith('bottom') && finalTargetHandle.endsWith('bottom'))
-				);
-				if (sameAxis) {
-					chooseHandles();
-				}
-			}
+			updateMessage(fromMessage.id, { replyTo: toMessage.id }, true);
 		} else {
 			type = 'flow';
-			const flowColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 			color = flowColors[Math.floor(Math.random() * flowColors.length)];
-
-			if (!finalSourceHandle || !finalTargetHandle) {
-				chooseHandles();
-			} else {
-				const sameAxis = (
-					(finalSourceHandle.endsWith('left') && finalTargetHandle.endsWith('left')) ||
-					(finalSourceHandle.endsWith('right') && finalTargetHandle.endsWith('right')) ||
-					(finalSourceHandle.endsWith('top') && finalTargetHandle.endsWith('top')) ||
-					(finalSourceHandle.endsWith('bottom') && finalTargetHandle.endsWith('bottom'))
-				);
-				if (sameAxis) {
-					chooseHandles();
-				}
+			// Flow remains directional to preserve ordering semantics.
+			if (wouldCreateFlowCycle(fromMessage.id, toMessage.id, conns)) {
+				return;
 			}
 		}
 	}
-	// Character to Character = NOT ALLOWED (return early)
-	else if ('username' in fromElement && 'username' in toElement) {
-		console.log('Character to character connections are not allowed');
+	// No speaker-speaker edges.
+	else {
 		return;
 	}
 
 	const exists = conns.some(
 		(c) =>
-			c.type === type &&
-			((c.from === finalFrom && c.to === finalTo) ||
-				(c.from === finalTo && c.to === finalFrom))
+			c.type === type && c.from === finalFrom && c.to === finalTo
 	);
 	if (exists) return;
 
@@ -734,6 +829,303 @@ export function createConnection(
 	}
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+	return value && typeof value === 'object' && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: null;
+}
+
+function readFirstString(record: Record<string, unknown>, keys: string[]): string | undefined {
+	for (const key of keys) {
+		const value = record[key];
+		if (typeof value === 'string' && value.trim().length > 0) {
+			return value.trim();
+		}
+	}
+	return undefined;
+}
+
+function readMessageText(record: Record<string, unknown>): string | undefined {
+	const direct = readFirstString(record, ['text', 'message', 'content', 'body']);
+	if (direct) return direct;
+
+	const content = record.content;
+	if (Array.isArray(content)) {
+		const chunks = content
+			.map((item) => {
+				if (typeof item === 'string') return item.trim();
+				const itemRecord = asRecord(item);
+				if (!itemRecord) return '';
+				const text = itemRecord.text;
+				return typeof text === 'string' ? text.trim() : '';
+			})
+			.filter(Boolean);
+		if (chunks.length > 0) return chunks.join(' ');
+	}
+
+	const nested = asRecord(content);
+	if (nested) {
+		return readFirstString(nested, ['text', 'message']);
+	}
+
+	return undefined;
+}
+
+function parseConversationEntries(payload: unknown): Record<string, unknown>[] {
+	if (Array.isArray(payload)) {
+		return payload.filter((item): item is Record<string, unknown> => asRecord(item) !== null);
+	}
+
+	const record = asRecord(payload);
+	if (!record) {
+		return [];
+	}
+
+	const candidates = ['conversation', 'messages', 'entries', 'data', 'chat', 'transcript'];
+	for (const key of candidates) {
+		const value = record[key];
+		if (Array.isArray(value)) {
+			return value.filter((item): item is Record<string, unknown> => asRecord(item) !== null);
+		}
+	}
+
+	return [];
+}
+
+export function importConversationFromJSON(payload: unknown) {
+	const entries = parseConversationEntries(payload);
+	if (entries.length === 0) {
+		throw new Error(
+			'No messages found. Use a JSON array or an object with a "conversation" or "messages" array.'
+		);
+	}
+
+	const normalizedEntries = entries
+		.map((entry, index) => {
+			const speaker =
+				readFirstString(entry, ['speaker', 'character', 'username', 'author', 'name', 'role']) ||
+				`Speaker ${index + 1}`;
+			const text = readMessageText(entry);
+			const timestamp =
+				readFirstString(entry, ['timestamp', 'createdAt', 'time']) || new Date().toISOString();
+			const replyRef =
+				entry.replyTo ??
+				entry.reply_to ??
+				entry.inReplyTo ??
+				entry.reply ??
+				null;
+			const externalId = entry.id;
+
+			if (!text) return null;
+			return {
+				speaker,
+				text,
+				timestamp,
+				replyRef,
+				externalId: typeof externalId === 'string' || typeof externalId === 'number' ? String(externalId) : null,
+				index
+			};
+		})
+		.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+	if (normalizedEntries.length === 0) {
+		throw new Error('Messages were found but none contained text content.');
+	}
+
+	const uniqueSpeakers: string[] = [];
+	for (const entry of normalizedEntries) {
+		if (!uniqueSpeakers.includes(entry.speaker)) {
+			uniqueSpeakers.push(entry.speaker);
+		}
+	}
+
+	const colorPalette = ['#3b82f6', '#8b5cf6', '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#ec4899'];
+	const speakerMap = new Map<string, Character>();
+	const importedCharacters: Character[] = uniqueSpeakers.map((speaker, index) => {
+		const id = `char-import-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`;
+		const character: Character = {
+			id,
+			username: speaker,
+			avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(
+				speaker
+			)}&backgroundColor=b6e3f4,c0aede,d1d4f9&scale=90`,
+			roleColor: colorPalette[index % colorPalette.length],
+			position: { x: 100, y: 80 + index * 180 }
+		};
+		speakerMap.set(speaker, character);
+		return character;
+	});
+
+	const importedMessages: Message[] = [];
+	const rawIdToMessageId = new Map<string, string>();
+	const indexToMessageId = new Map<number, string>();
+	const baseTime = Date.now() - normalizedEntries.length * 60_000;
+
+	for (const [index, entry] of normalizedEntries.entries()) {
+		const id = `msg-import-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`;
+		const speakerCharacter = speakerMap.get(entry.speaker)!;
+		const parsedTime = Date.parse(entry.timestamp);
+		const timestamp = Number.isFinite(parsedTime)
+			? new Date(parsedTime).toISOString()
+			: new Date(baseTime + index * 60_000).toISOString();
+
+		const message: Message = {
+			id,
+			characterId: speakerCharacter.id,
+			text: entry.text,
+			position: { x: 420 + (index % 2) * 44, y: 80 + index * 136 },
+			timestamp
+		};
+
+		importedMessages.push(message);
+		indexToMessageId.set(index, id);
+		if (entry.externalId) {
+			rawIdToMessageId.set(entry.externalId, id);
+		}
+	}
+
+	const importedConnections: Connection[] = [];
+	for (const message of importedMessages) {
+		const character = importedCharacters.find((item) => item.id === message.characterId);
+		if (!character) continue;
+		const handles = getMessageToCharacterHandles(message, character);
+		importedConnections.push({
+			id: `conn-import-assign-${message.id}-${character.id}`,
+			from: message.id,
+			to: character.id,
+			type: 'assignment',
+			color: character.roleColor,
+			sourceHandle: handles.sourceHandle,
+			targetHandle: handles.targetHandle
+		});
+	}
+
+	for (let i = 1; i < importedMessages.length; i++) {
+		const previous = importedMessages[i - 1];
+		const current = importedMessages[i];
+		const handles = getMessageToMessageHandles(previous, current);
+		importedConnections.push({
+			id: `conn-import-flow-${previous.id}-${current.id}`,
+			from: previous.id,
+			to: current.id,
+			type: 'flow',
+			color: flowColors[i % flowColors.length],
+			sourceHandle: handles.sourceHandle,
+			targetHandle: handles.targetHandle
+		});
+	}
+
+	for (const entry of normalizedEntries) {
+		const sourceId = indexToMessageId.get(entry.index);
+		if (!sourceId || entry.replyRef === null || entry.replyRef === undefined) continue;
+
+		let targetId: string | undefined;
+		if (typeof entry.replyRef === 'number' && Number.isFinite(entry.replyRef)) {
+			const numeric = entry.replyRef;
+			if (indexToMessageId.has(numeric)) {
+				targetId = indexToMessageId.get(numeric);
+			} else if (indexToMessageId.has(numeric - 1)) {
+				targetId = indexToMessageId.get(numeric - 1);
+			}
+		} else if (typeof entry.replyRef === 'string') {
+			const trimmed = entry.replyRef.trim();
+			targetId = rawIdToMessageId.get(trimmed);
+			if (!targetId && /^\d+$/.test(trimmed)) {
+				const numeric = Number(trimmed);
+				targetId = indexToMessageId.get(numeric) ?? indexToMessageId.get(numeric - 1);
+			}
+		}
+
+		if (!targetId || targetId === sourceId) continue;
+
+		const sourceMessage = importedMessages.find((message) => message.id === sourceId);
+		const targetMessage = importedMessages.find((message) => message.id === targetId);
+		if (!sourceMessage || !targetMessage) continue;
+		sourceMessage.replyTo = targetId;
+		const handles = getMessageToMessageHandles(sourceMessage, targetMessage);
+		importedConnections.push({
+			id: `conn-import-reply-${sourceMessage.id}-${targetMessage.id}`,
+			from: sourceMessage.id,
+			to: targetMessage.id,
+			type: 'reply',
+			color: '#94a3b8',
+			sourceHandle: handles.sourceHandle,
+			targetHandle: handles.targetHandle
+		});
+	}
+
+	const normalizedConnections = normalizeConnections(
+		importedConnections,
+		importedCharacters,
+		importedMessages
+	);
+
+	characters.set(importedCharacters);
+	messages.set(importedMessages);
+	connections.set(normalizedConnections);
+	nodeConnectionModes.set({});
+	selectedElement.set(importedMessages[0]?.id ?? null);
+	previewState.set('preview');
+	propagateSpeakerAssignments();
+
+	return {
+		characters: importedCharacters.length,
+		messages: importedMessages.length,
+		connections: normalizedConnections.length
+	};
+}
+
+export function importProjectData(payload: unknown) {
+	const record = asRecord(payload);
+	if (!record) {
+		throw new Error('Invalid project JSON.');
+	}
+
+	const projectCharacters = Array.isArray(record.characters)
+		? record.characters.filter((item): item is Character => asRecord(item) !== null).map((item) => item as Character)
+		: [];
+	const projectMessages = Array.isArray(record.messages)
+		? record.messages.filter((item): item is Message => asRecord(item) !== null).map((item) => item as Message)
+		: [];
+	const projectConnections = Array.isArray(record.connections)
+		? record.connections
+				.filter((item): item is Connection => asRecord(item) !== null)
+				.map((item) => item as Connection)
+		: [];
+
+	if (projectCharacters.length === 0 && projectMessages.length === 0) {
+		throw new Error('Project JSON must include at least one character or message.');
+	}
+
+	const normalizedConnections = normalizeConnections(
+		projectConnections,
+		projectCharacters,
+		projectMessages
+	);
+
+	characters.set(projectCharacters);
+	messages.set(projectMessages);
+	connections.set(normalizedConnections);
+	nodeConnectionModes.set({});
+	selectedElement.set(null);
+	previewState.set('preview');
+	propagateSpeakerAssignments();
+
+	const projectCustomizeSettings = asRecord(record.customizeSettings);
+	if (projectCustomizeSettings) {
+		customizeSettings.update((settings) => ({
+			...settings,
+			...(projectCustomizeSettings as Partial<CustomizationSettings>)
+		}));
+	}
+
+	return {
+		characters: projectCharacters.length,
+		messages: projectMessages.length,
+		connections: normalizedConnections.length
+	};
+}
+
 export function deleteElement(id: string, type: 'character' | 'message') {
 	if (type === 'character') {
 		deleteCharacter(id);
@@ -754,14 +1146,11 @@ export function handleGenerateVideo() {
 }
 
 export function handleTemplateSelect(template: any) {
-	const settings = get(customizeSettings);
-
 	if (template.appTheme) {
 		customizeSettings.update((s) => ({
 			...s,
 			backgroundColor: template.appTheme.backgroundColor || s.backgroundColor,
 			primaryColor: template.appTheme.primaryColor || s.primaryColor,
-			secondaryColor: template.appTheme.secondaryColor || s.secondaryColor,
 			textColor: template.appTheme.textColor || s.textColor
 		}));
 	}
@@ -778,7 +1167,7 @@ export function handleTemplateSelect(template: any) {
 	}, 100);
 }
 
-export function handleApplyCustomization(settings: any) {
+export function handleApplyCustomization(settings: Partial<CustomizationSettings>) {
 	customizeSettings.update((s) => ({ ...s, ...settings }));
 }
 

@@ -69,18 +69,13 @@
 		}
 	});
 
-	const isConnectMode = $derived(data.selectedTool === 'connect');
 	const isSelectMode = $derived(data.selectedTool === 'select');
 	const handleVisibility = $derived(
-		isConnectMode
-			? 'opacity-100'
-			: isSelectMode
-				? 'opacity-80 group-hover:opacity-100'
-				: 'opacity-60 group-hover:opacity-90'
+		isSelectMode ? 'opacity-80 group-hover:opacity-100' : 'opacity-60 group-hover:opacity-90'
 	);
 </script>
 
-<div class="relative group {isConnectMode || isSelectMode ? 'cursor-pointer' : ''}">
+<div class="relative group {isSelectMode ? 'cursor-pointer' : ''}">
 	<!-- Connection Handles - Source on right, Target on left -->
 	<Handle
 		type="source"
@@ -100,7 +95,6 @@
 	<!-- Character Node Card -->
 	<div
 		class="bg-card border rounded-lg p-4 min-w-[240px] shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer backdrop-blur-sm
-			{isConnectMode ? 'hover:ring-2 hover:ring-green-300 hover:border-green-400' : ''}
 			{selected ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-lg' : 'border-border hover:border-border/80'}"
 		ondblclick={handleDoubleClick}
 		role="button"

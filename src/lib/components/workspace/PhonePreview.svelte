@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Character, Message, Connection } from '$lib/types';
+	import type { Character, Message, Connection, CustomizationSettings } from '$lib/types';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { Progress } from '$lib/components/ui/progress';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
@@ -11,22 +11,7 @@
 		connections: Connection[];
 		previewState: 'preview' | 'loading' | 'video';
 		isGenerating?: boolean;
-		customizeSettings?: {
-			backgroundColor?: string;
-			backgroundImage?: string;
-			backgroundTheme?: string;
-			primaryColor?: string;
-			textColor?: string;
-			channelName?: string;
-			fontFamily?: string;
-			fontSize?: number;
-			fontWeight?: string;
-			messageSpacing?: number;
-			messagePadding?: number;
-			messageAlignment?: string;
-			showAvatars?: boolean;
-			showTimestamps?: boolean;
-		};
+		customizeSettings?: Partial<CustomizationSettings>;
 	}
 
 	let {
@@ -39,34 +24,9 @@
 
 	const messageFlowInfo = $derived(analyzeMessageFlow(messages, connections));
 	const backgroundColor = $derived(customizeSettings.backgroundColor || '#313338');
-	const backgroundImage = $derived(customizeSettings.backgroundImage || '');
-	const backgroundTheme = $derived(customizeSettings.backgroundTheme || 'none');
 	const primaryColor = $derived(customizeSettings.primaryColor || '#5865f2');
 	const textColor = $derived(customizeSettings.textColor || '#dcddde');
 	const channelName = $derived(customizeSettings.channelName || 'general');
-	
-	// Generate background style based on theme
-	const backgroundStyle = $derived(() => {
-		const baseColor = backgroundColor;
-		const opacity = '88'; // Semi-transparent overlay (about 53%)
-		
-		switch (backgroundTheme) {
-			case 'gradient1':
-				return `linear-gradient(135deg, ${baseColor}${opacity} 0%, #6b46c1${opacity} 100%)`;
-			case 'gradient2':
-				return `linear-gradient(135deg, ${baseColor}${opacity} 0%, #3b82f6${opacity} 100%)`;
-			case 'gradient3':
-				return `linear-gradient(135deg, ${baseColor}${opacity} 0%, #10b981${opacity} 100%)`;
-			case 'pattern1':
-				return `repeating-linear-gradient(0deg, transparent, transparent 20px, ${baseColor}30 20px, ${baseColor}30 21px), repeating-linear-gradient(90deg, transparent, transparent 20px, ${baseColor}30 20px, ${baseColor}30 21px), ${baseColor}`;
-			case 'pattern2':
-				return `radial-gradient(circle at 10px 10px, ${baseColor}50 2px, transparent 2px), ${baseColor}`;
-			case 'custom':
-				return backgroundImage ? `linear-gradient(${baseColor}${opacity}, ${baseColor}${opacity}), url(${backgroundImage})` : baseColor;
-			default:
-				return baseColor;
-		}
-	});
 	
 	// Adapt foreground colors based on background luminance
 	const adaptedColors = $derived(() => {
@@ -91,11 +51,21 @@
 		};
 	});
 	const fontFamily = $derived(customizeSettings.fontFamily || 'Inter');
+	const fontFamilyStack = $derived.by(() => {
+		const stacks: Record<string, string> = {
+			Inter: "'Inter', sans-serif",
+			Roboto: "'Roboto', sans-serif",
+			'Open Sans': "'Open Sans', sans-serif",
+			Lato: "'Lato', sans-serif",
+			Montserrat: "'Montserrat', sans-serif",
+			Poppins: "'Poppins', sans-serif"
+		};
+		return stacks[fontFamily] ?? "'Inter', sans-serif";
+	});
 	const fontSize = $derived(customizeSettings.fontSize || 16);
 	const fontWeight = $derived(customizeSettings.fontWeight || 'normal');
 	const messageSpacing = $derived(customizeSettings.messageSpacing || 12);
 	const messagePadding = $derived(customizeSettings.messagePadding || 16);
-	const messageAlignment = $derived(customizeSettings.messageAlignment || 'left');
 	const showAvatars = $derived(customizeSettings.showAvatars ?? true);
 	const showTimestamps = $derived(customizeSettings.showTimestamps ?? true);
 	
@@ -133,7 +103,7 @@
 			<div class="h-[calc(100%-24px)]">
 				{#if previewState === 'preview' || previewState === 'video'}
 					<!-- Discord Chat UI -->
-					<div class="h-full flex flex-col" style="background: {backgroundStyle()}; background-size: cover; background-position: center;">
+					<div class="h-full flex flex-col" style="background-color: {backgroundColor}; font-family: {fontFamilyStack};">
 						<!-- Discord Mobile Header -->
 						<div
 							class="px-3 py-2 border-b flex items-center justify-between flex-shrink-0 shadow-sm backdrop-blur-sm"
@@ -174,7 +144,7 @@
 
 						<!-- Messages Area -->
 						<ScrollArea class="flex-1 px-1 py-4">
-							<div style="gap: {messageSpacing}px; display: flex; flex-direction: column; font-family: {fontFamily}; text-align: {messageAlignment};">
+							<div style="gap: {messageSpacing}px; display: flex; flex-direction: column; text-align: left; font-weight: {fontWeightValue};">
 								{#if messageFlowInfo.length === 0}
 									<!-- Welcome Message -->
 									<div class="flex flex-col items-center justify-center py-8 text-center">
@@ -225,10 +195,7 @@
 
 												<div class="flex-1 min-w-0" style="margin-left: {showAvatars ? '0' : '0'}">
 													<div class="flex items-baseline gap-2 mb-0.5">
-														<span
-															class="font-semibold"
-															style="color: {character ? displayCharacter.roleColor : '#99aab5'}; font-size: {fontSize}px; font-weight: {fontWeightValue};"
-														>
+														<span style="color: {character ? displayCharacter.roleColor : '#99aab5'}; font-size: {fontSize}px; font-weight: {fontWeightValue};">
 															{displayCharacter.username}
 														</span>
 														{#if !character}
@@ -394,7 +361,7 @@
 					</div>
 				{:else if previewState === 'loading'}
 					<!-- Loading State -->
-					<div class="h-full flex items-center justify-center relative" style="background: {backgroundStyle()}; background-size: cover; background-position: center;">
+					<div class="h-full flex items-center justify-center relative" style="background-color: {backgroundColor};">
 						<div
 							class="rounded-lg p-6 text-center max-w-xs backdrop-blur-sm"
 							style="background-color: {adaptedColors().header}"

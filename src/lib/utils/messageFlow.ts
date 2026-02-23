@@ -14,77 +14,97 @@ export interface MessageFlowInfo {
 export function analyzeMessageFlow(messages: Message[], connections: Connection[]): MessageFlowInfo[] {
 	if (messages.length === 0) return [];
 
-	// Build adjacency list for flow connections
-	const flowConnections = connections.filter((c) => c.type === 'flow');
-	const adjacencyList = new Map<string, string[]>();
-	const inDegree = new Map<string, number>();
+	const messageMap = new Map(messages.map((message) => [message.id, message]));
+	const orderIndex = new Map(messages.map((message, index) => [message.id, index]));
+	const compareByOrder = (a: string, b: string) =>
+		(orderIndex.get(a) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b) ?? Number.MAX_SAFE_INTEGER);
 
-	// Initialize all messages
-	messages.forEach((msg) => {
-		adjacencyList.set(msg.id, []);
-		inDegree.set(msg.id, 0);
-	});
-
-	// Build graph from flow connections
-	flowConnections.forEach((conn) => {
-		if (adjacencyList.has(conn.from) && adjacencyList.has(conn.to)) {
-			adjacencyList.get(conn.from)!.push(conn.to);
-			inDegree.set(conn.to, (inDegree.get(conn.to) || 0) + 1);
-		}
-	});
-
-	// Topological sort using Kahn's algorithm
-	const queue: string[] = [];
-	const sorted: string[] = [];
-	const levels = new Map<string, number>();
-
-	// Start with messages that have no incoming edges
-	messages.forEach((msg) => {
-		if (inDegree.get(msg.id) === 0) {
-			queue.push(msg.id);
-			levels.set(msg.id, 0);
-		}
-	});
-
-	// Process queue
-	while (queue.length > 0) {
-		const current = queue.shift()!;
-		sorted.push(current);
-		const currentLevel = levels.get(current) || 0;
-
-		const neighbors = adjacencyList.get(current) || [];
-		neighbors.forEach((neighbor) => {
-			const newDegree = (inDegree.get(neighbor) || 0) - 1;
-			inDegree.set(neighbor, newDegree);
-
-			if (newDegree === 0) {
-				queue.push(neighbor);
-				levels.set(neighbor, currentLevel + 1);
-			}
-		});
+	// Keep only valid directional flow edges.
+	const flowConnections = connections.filter(
+		(connection) =>
+			connection.type === 'flow' &&
+			messageMap.has(connection.from) &&
+			messageMap.has(connection.to) &&
+			connection.from !== connection.to
+	);
+	const flowNodeIds = new Set<string>();
+	for (const connection of flowConnections) {
+		flowNodeIds.add(connection.from);
+		flowNodeIds.add(connection.to);
 	}
 
-	// Handle any remaining messages (cycles or disconnected)
-	messages.forEach((msg) => {
-		if (!sorted.includes(msg.id)) {
-			sorted.push(msg.id);
-			levels.set(msg.id, 999); // Put at end
-		}
-	});
+	const adjacencyList = new Map<string, string[]>();
+	const inDegree = new Map<string, number>();
+	for (const nodeId of flowNodeIds) {
+		adjacencyList.set(nodeId, []);
+		inDegree.set(nodeId, 0);
+	}
 
-	// Build result
+	// Build graph from directional flow connections
+	for (const connection of flowConnections) {
+		adjacencyList.get(connection.from)?.push(connection.to);
+		inDegree.set(connection.to, (inDegree.get(connection.to) || 0) + 1);
+	}
+
+	// Topological sort (flow-first), preserving message list order for ties.
+	const queue: string[] = [];
+	const sortedFlow: string[] = [];
+	const levels = new Map<string, number>();
+
+	for (const nodeId of flowNodeIds) {
+		if ((inDegree.get(nodeId) || 0) === 0) {
+			queue.push(nodeId);
+			levels.set(nodeId, 0);
+		}
+	}
+	queue.sort(compareByOrder);
+
+	while (queue.length > 0) {
+		const current = queue.shift()!;
+		sortedFlow.push(current);
+		const currentLevel = levels.get(current) || 0;
+
+		for (const neighbor of adjacencyList.get(current) || []) {
+			const nextDegree = (inDegree.get(neighbor) || 0) - 1;
+			inDegree.set(neighbor, nextDegree);
+			levels.set(neighbor, Math.max(levels.get(neighbor) ?? 0, currentLevel + 1));
+
+			if (nextDegree === 0) {
+				queue.push(neighbor);
+				queue.sort(compareByOrder);
+			}
+		}
+	}
+
+	// Any remaining flow nodes (should only happen with malformed cyclic input).
+	const visitedFlow = new Set(sortedFlow);
+	const remainingFlowNodes = [...flowNodeIds].filter((id) => !visitedFlow.has(id)).sort(compareByOrder);
+	for (const id of remainingFlowNodes) {
+		sortedFlow.push(id);
+		if (!levels.has(id)) {
+			levels.set(id, 999);
+		}
+	}
+
+	// Append disconnected messages after flow-sequenced messages.
+	const disconnectedMessages = messages
+		.map((message) => message.id)
+		.filter((id) => !flowNodeIds.has(id))
+		.sort(compareByOrder);
+
+	const sorted = [...sortedFlow, ...disconnectedMessages];
+
 	return sorted
 		.map((id) => {
-			const message = messages.find((m) => m.id === id);
+			const message = messageMap.get(id);
 			if (!message) return null;
 
-			const hasIncoming = flowConnections.some((c) => c.to === id);
-			const hasOutgoing = flowConnections.some((c) => c.from === id);
-			const level = levels.get(id) || 0;
+			const hasIncoming = flowConnections.some((connection) => connection.to === id);
+			const hasOutgoing = flowConnections.some((connection) => connection.from === id);
 
 			return {
 				message,
-				level,
+				level: levels.get(id) ?? 999,
 				hasIncoming,
 				hasOutgoing
 			};

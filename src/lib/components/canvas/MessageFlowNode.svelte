@@ -223,7 +223,9 @@
 				/>
 			</div>
 			<p class="text-[10px] text-muted-foreground/80 mt-1 leading-tight">
-				{nodeConnectionMode === 'reply' ? '✓ New connections will create replies' : 'New connections will be sequential'}
+				{nodeConnectionMode === 'reply'
+					? 'Reply Mode: drag FROM this message TO the message being replied to.'
+					: 'Flow Mode: drag FROM this message TO the next message in sequence.'}
 			</p>
 		</div>
 

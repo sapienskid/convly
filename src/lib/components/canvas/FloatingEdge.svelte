@@ -12,6 +12,8 @@
 		sourcePosition,
 		targetPosition,
 		style,
+		markerStart,
+		markerEnd,
 		data
 	}: Props = $props();
 
@@ -32,4 +34,6 @@
 	{id}
 	path={edgePath}
 	{style}
+	{markerStart}
+	{markerEnd}
 />
