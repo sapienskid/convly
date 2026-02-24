@@ -41,6 +41,13 @@ const QUALITY_BITRATES: Record<string, number> = {
 /** Wait for DOM to be fully painted after state updates */
 function waitForDomPaint(): Promise<void> {
 	return new Promise((resolve) => {
+		// requestAnimationFrame is heavily throttled (or paused) in background tabs.
+		// Fall back to a microtask so export can continue when the tab is hidden.
+		if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+			queueMicrotask(resolve);
+			return;
+		}
+
 		requestAnimationFrame(() => {
 			resolve();
 		});
@@ -205,6 +212,24 @@ export class VideoExporter {
 
 			const MuxerClass = MuxerModule.Muxer as any;
 			const ArrayBufferTargetClass = MuxerModule.ArrayBufferTarget as any;
+			const StreamTargetClass = MuxerModule.StreamTarget as any;
+
+			type MuxerChunk = { position: number; data: Uint8Array<ArrayBuffer> };
+			const muxerChunks: MuxerChunk[] = [];
+			let muxerOutputSize = 0;
+			const target =
+				typeof StreamTargetClass === 'function'
+					? new StreamTargetClass({
+							onData: (data: Uint8Array, position: number) => {
+								const chunkCopy = new Uint8Array(data.byteLength) as Uint8Array<ArrayBuffer>;
+								chunkCopy.set(data);
+								muxerChunks.push({ position, data: chunkCopy });
+								muxerOutputSize = Math.max(muxerOutputSize, position + chunkCopy.byteLength);
+							},
+							chunked: true,
+							chunkSize: 1024 * 1024
+						})
+					: new ArrayBufferTargetClass();
 
 			const videoTrackCodec =
 				format === 'mp4'
@@ -220,46 +245,93 @@ export class VideoExporter {
 							: 'V_MPEG4/ISO/AVC';
 
 			const wantsAudio = this.options.audio.musicEnabled || this.options.audio.notificationEnabled;
-			const audioTrackCodec = format === 'mp4' ? 'aac' : 'A_OPUS';
-			const audioEncoderCodec = format === 'mp4' ? 'mp4a.40.2' : 'opus';
-			const audioConfig = {
-				codec: audioEncoderCodec,
-				sampleRate: 44100,
-				numberOfChannels: 2,
-				bitrate: 128000
+			type AudioPlan = {
+				trackCodec: 'aac' | 'opus' | 'A_OPUS';
+				encoderConfig: AudioEncoderConfig;
 			};
-			let shouldEncodeAudio = false;
+			const audioCandidates: AudioPlan[] =
+				format === 'mp4'
+					? [
+							{
+								trackCodec: 'aac',
+								encoderConfig: {
+									codec: 'mp4a.40.2',
+									sampleRate: 44100,
+									numberOfChannels: 2,
+									bitrate: 128000
+								}
+							},
+							{
+								trackCodec: 'opus',
+								encoderConfig: {
+									codec: 'opus',
+									sampleRate: 48000,
+									numberOfChannels: 2,
+									bitrate: 128000
+								}
+							}
+						]
+					: [
+							{
+								trackCodec: 'A_OPUS',
+								encoderConfig: {
+									codec: 'opus',
+									sampleRate: 48000,
+									numberOfChannels: 2,
+									bitrate: 128000
+								}
+							}
+						];
+			let audioPlan: AudioPlan | null = null;
 
 			if (wantsAudio) {
 				if (typeof AudioEncoder === 'undefined') {
 					console.warn('AudioEncoder not available in this browser, exporting without audio');
 				} else {
-					try {
-						const support = await AudioEncoder.isConfigSupported(audioConfig);
-						if (support.supported) {
-							shouldEncodeAudio = true;
-						} else {
-							console.warn(`AudioEncoder codec ${audioEncoderCodec} not supported, exporting without audio`);
+					for (let index = 0; index < audioCandidates.length; index += 1) {
+						const candidate = audioCandidates[index];
+						try {
+							const support = await AudioEncoder.isConfigSupported(candidate.encoderConfig);
+							if (!support.supported) {
+								continue;
+							}
+
+							audioPlan = candidate;
+							if (index > 0) {
+								console.warn(
+									`Audio codec fallback: ${audioCandidates[0].encoderConfig.codec} unsupported, using ${candidate.encoderConfig.codec}`
+								);
+							}
+							break;
+						} catch (error) {
+							console.warn(
+								`Failed to query AudioEncoder support for ${candidate.encoderConfig.codec}`,
+								error
+							);
 						}
-					} catch (error) {
-						console.warn('Failed to query AudioEncoder support, exporting without audio', error);
+					}
+
+					if (!audioPlan) {
+						console.warn('No supported audio codec found for current export format, exporting without audio');
 					}
 				}
 			}
 
 			this.muxer = new MuxerClass({
-				target: new ArrayBufferTargetClass(),
+				target,
 				video: {
 					codec: videoTrackCodec,
 					width,
 					height,
 					frameRate: safeFps
 				},
-				audio: shouldEncodeAudio ? {
-					codec: audioTrackCodec,
-					numberOfChannels: 2,
-					sampleRate: 44100
-				} : undefined,
+				audio: audioPlan
+					? {
+							codec: audioPlan.trackCodec,
+							numberOfChannels: audioPlan.encoderConfig.numberOfChannels,
+							sampleRate: audioPlan.encoderConfig.sampleRate
+						}
+					: undefined,
 				fastStart: format === 'mp4' ? false : undefined
 			});
 
@@ -321,15 +393,20 @@ export class VideoExporter {
 
 			// Setup Audio offline rendering if audio is needed
 			const audioEvents = extractAudioEventsFromTimeline(timeline);
-			if (shouldEncodeAudio) {
+			if (audioPlan) {
 				try {
-					const offlineCtx = new OfflineAudioContext(2, 44100 * adjustedDuration, 44100);
+					const audioSampleRate = audioPlan.encoderConfig.sampleRate;
+					const audioLength = Math.max(1, Math.ceil(audioSampleRate * adjustedDuration));
+					const offlineCtx = new OfflineAudioContext(2, audioLength, audioSampleRate);
 					let musicBuffer: AudioBuffer | null = null;
 					let notifBuffer: AudioBuffer | null = null;
 
 					// Fetch music
 					if (this.options.audio.musicEnabled && this.options.audio.musicTrackUrl) {
 						const res = await fetch(this.options.audio.musicTrackUrl);
+						if (!res.ok) {
+							throw new Error(`Failed to load music track: ${res.status} ${res.statusText}`);
+						}
 						const arrayBuffer = await res.arrayBuffer();
 						musicBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
 						const source = offlineCtx.createBufferSource();
@@ -345,15 +422,21 @@ export class VideoExporter {
 					// Fetch notification
 					if (this.options.audio.notificationEnabled && this.options.audio.notificationSoundUrl) {
 						const res = await fetch(this.options.audio.notificationSoundUrl);
+						if (!res.ok) {
+							throw new Error(`Failed to load notification sound: ${res.status} ${res.statusText}`);
+						}
 						const arrayBuffer = await res.arrayBuffer();
 						notifBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
 						
 						for (const event of audioEvents) {
-							if (event.type === 'notification' && event.time / animationSpeed <= adjustedDuration) {
+							if (
+								event.type === 'notification' &&
+								event.time / safeAnimationSpeed <= adjustedDuration
+							) {
 								const source = offlineCtx.createBufferSource();
 								source.buffer = notifBuffer;
 								source.connect(offlineCtx.destination);
-								source.start(event.time / animationSpeed);
+								source.start(event.time / safeAnimationSpeed);
 							}
 						}
 					}
@@ -376,12 +459,12 @@ export class VideoExporter {
 						}
 					});
 
-					this.audioEncoder.configure(audioConfig);
+					this.audioEncoder.configure(audioPlan.encoderConfig);
 					
 					const channelData = [finalAudioBuffer.getChannelData(0), finalAudioBuffer.getChannelData(1)];
 					const numSamples = finalAudioBuffer.length;
 					let offset = 0;
-					const chunkSize = 44100;
+					const chunkSize = audioSampleRate;
 					while (offset < numSamples) {
 						const curSize = Math.min(chunkSize, numSamples - offset);
 						const planarData = new Float32Array(curSize * 2);
@@ -390,10 +473,10 @@ export class VideoExporter {
 						
 						const audioData = new AudioData({
 							format: 'f32-planar',
-							sampleRate: 44100,
+							sampleRate: audioSampleRate,
 							numberOfFrames: curSize,
 							numberOfChannels: 2,
-							timestamp: (offset / 44100) * 1e6,
+							timestamp: Math.round((offset / audioSampleRate) * 1e6),
 							data: planarData
 						});
 						this.audioEncoder.encode(audioData);
@@ -442,31 +525,39 @@ export class VideoExporter {
 			let drawX = 0;
 			let drawY = 0;
 
+			// Fill the entire export frame (screen-recorded look) rather than letterboxing.
 			if (sourceAspect > targetAspect) {
-				drawHeight = Math.max(1, Math.round(width / sourceAspect));
-				drawY = Math.max(0, Math.round((height - drawHeight) / 2));
-			} else {
+				drawHeight = height;
 				drawWidth = Math.max(1, Math.round(height * sourceAspect));
-				drawX = Math.max(0, Math.round((width - drawWidth) / 2));
+				drawX = Math.round((width - drawWidth) / 2);
+				drawY = 0;
+			} else {
+				drawWidth = width;
+				drawHeight = Math.max(1, Math.round(width / sourceAspect));
+				drawX = 0;
+				drawY = Math.round((height - drawHeight) / 2);
 			}
 
-			const captureContext = await createContext(previewElement, {
-				width: captureWidth,
-				height: captureHeight,
-				scale: 1,
-				backgroundColor,
-				timeout: 15000,
-				drawImageInterval: 0,
-				features: {
-					fixSvgXmlDecode: true,
-					restoreScrollPosition: true
-				},
-				fetch: {
-					bypassingCache: false,
-					requestInit: { cache: 'force-cache' }
-				},
-				autoDestruct: false
-			});
+			const createCaptureContext = () =>
+				createContext(previewElement, {
+					width: captureWidth,
+					height: captureHeight,
+					scale: 1,
+					backgroundColor,
+					timeout: 15000,
+					drawImageInterval: 0,
+					features: {
+						fixSvgXmlDecode: true,
+						restoreScrollPosition: true
+					},
+					fetch: {
+						bypassingCache: false,
+						requestInit: { cache: 'force-cache' }
+					},
+					autoDestruct: false
+				});
+			const captureContextRefreshEvery = Math.max(safeFps * 3, 72);
+			let captureContext: CaptureContext | null = await createCaptureContext();
 
 			try {
 				for (let frame = 0; frame < totalFrames; frame++) {
@@ -492,15 +583,26 @@ export class VideoExporter {
 						await this.videoEncoder.flush();
 					}
 
-					const captured = await domToCanvas(captureContext);
+					if (frame > 0 && frame % captureContextRefreshEvery === 0) {
+						try {
+							if (captureContext) {
+								destroyContext(captureContext);
+							}
+						} catch {
+							// Ignore context cleanup errors.
+						}
+						captureContext = await createCaptureContext();
+					}
+
+					const captured = await domToCanvas(captureContext!);
 
 					this.ctx!.fillStyle = backgroundColor;
 					this.ctx!.fillRect(0, 0, width, height);
 					this.ctx!.drawImage(captured, drawX, drawY, drawWidth, drawHeight);
 
 					// Help GC reclaim the transient capture canvas aggressively.
-					captured.width = 1;
-					captured.height = 1;
+					captured.width = 0;
+					captured.height = 0;
 
 					const videoFrame = new VideoFrame(this.canvas!, {
 						timestamp: frame * frameDurationUs,
@@ -536,7 +638,9 @@ export class VideoExporter {
 				}
 			} finally {
 				try {
-					destroyContext(captureContext);
+					if (captureContext) {
+						destroyContext(captureContext);
+					}
 				} catch {
 					// Ignore context cleanup errors.
 				}
@@ -556,8 +660,38 @@ export class VideoExporter {
 			this.muxer.finalize();
 			this.throwIfFatalError();
 			
-			const buffer = this.muxer.target.buffer;
-			const blob = new Blob([buffer], { type: format === 'mp4' ? 'video/mp4' : 'video/webm' });
+			const mimeType = format === 'mp4' ? 'video/mp4' : 'video/webm';
+			let blob: Blob;
+
+			if (muxerChunks.length > 0) {
+				const orderedChunks = muxerChunks.slice().sort((a, b) => a.position - b.position);
+				let expectedPosition = 0;
+				let isSequential = true;
+
+				for (const chunk of orderedChunks) {
+					if (chunk.position !== expectedPosition) {
+						isSequential = false;
+						break;
+					}
+					expectedPosition += chunk.data.byteLength;
+				}
+
+				if (isSequential) {
+					blob = new Blob(orderedChunks.map((chunk) => chunk.data), { type: mimeType });
+				} else {
+					const assembled = new Uint8Array(muxerOutputSize);
+					for (const chunk of orderedChunks) {
+						assembled.set(chunk.data, chunk.position);
+					}
+					blob = new Blob([assembled], { type: mimeType });
+				}
+
+				muxerChunks.length = 0;
+			} else {
+				const buffer = this.muxer.target.buffer;
+				blob = new Blob([buffer], { type: mimeType });
+			}
+
 			return blob;
 		} catch (error) {
 			this.setFatalError(error);

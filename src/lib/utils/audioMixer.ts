@@ -183,7 +183,7 @@ export function extractAudioEventsFromTimeline(timeline: AnimationTimeline): Aud
 
 	for (const entry of timeline.entries) {
 		events.push({
-			time: entry.typingEnd,
+			time: entry.start,
 			type: 'notification',
 			characterId: entry.message.characterId
 		});

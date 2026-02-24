@@ -11,6 +11,7 @@
 	import { onMount, tick } from 'svelte';
 	import { initializeStore, isInitialized } from '$lib/stores/appStore';
 	import { buildMessageAnimationTimeline } from '$lib/utils/animationTimeline';
+	import { extractAudioEventsFromTimeline } from '$lib/utils/audioMixer';
 	import { VideoExporter, downloadVideo, getResolutionPreset, type ExportProgress } from '$lib/utils/videoExport';
 	
 	let isRightPanelCollapsed = $state(false);
@@ -32,6 +33,7 @@
 	const animationTimeline = $derived.by(() =>
 		buildMessageAnimationTimeline($messages, $connections, $customizeSettings)
 	);
+	const notificationEvents = $derived.by(() => extractAudioEventsFromTimeline(animationTimeline));
 	const videoDuration = $derived(animationTimeline.totalDuration);
 	const normalizedAnimationSpeed = $derived.by(() => {
 		const speed = Number($customizeSettings.animationSpeed);
@@ -58,10 +60,10 @@
 			return;
 		}
 
-		const index = animationTimeline.entries.findIndex(
-			(entry) => entry.start >= timeSeconds - NOTIFICATION_EPSILON
+		const index = notificationEvents.findIndex(
+			(event) => event.time >= timeSeconds - NOTIFICATION_EPSILON
 		);
-		nextNotificationIndex = index === -1 ? animationTimeline.entries.length : index;
+		nextNotificationIndex = index === -1 ? notificationEvents.length : index;
 	}
 
 	onMount(() => {
@@ -141,11 +143,11 @@
 	$effect(() => {
 		if (!notificationAudio || !isVideoPlaying || $previewState !== 'video') return;
 
-		const entries = animationTimeline.entries;
+		const events = notificationEvents;
 		if (!($customizeSettings.notificationSoundEnabled ?? true)) {
 			while (
-				nextNotificationIndex < entries.length &&
-				entries[nextNotificationIndex].start <= videoCurrentTime + NOTIFICATION_EPSILON
+				nextNotificationIndex < events.length &&
+				events[nextNotificationIndex].time <= videoCurrentTime + NOTIFICATION_EPSILON
 			) {
 				nextNotificationIndex += 1;
 			}
@@ -153,8 +155,8 @@
 		}
 
 		while (
-			nextNotificationIndex < entries.length &&
-			entries[nextNotificationIndex].start <= videoCurrentTime + NOTIFICATION_EPSILON
+			nextNotificationIndex < events.length &&
+			events[nextNotificationIndex].time <= videoCurrentTime + NOTIFICATION_EPSILON
 		) {
 			notificationAudio.currentTime = 0;
 			const playPromise = notificationAudio.play();
@@ -316,6 +318,10 @@
 			await tick();
 
 			const previewContainer = await waitForLivePreviewElement();
+			const screenCaptureElement =
+				previewContainer.querySelector<HTMLElement>('[data-export-capture="app-content"]') ??
+				previewContainer.querySelector<HTMLElement>('[data-export-capture="screen"]') ??
+				previewContainer;
 
 			await videoExporter.initialize({
 				width: resolution.width,
@@ -338,7 +344,7 @@
 
 			const blob = await videoExporter.startRecording(
 				animationTimeline,
-				previewContainer,
+				screenCaptureElement,
 				(progress) => {
 					exportProgress = progress;
 				},

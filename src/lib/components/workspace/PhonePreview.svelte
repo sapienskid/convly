@@ -163,7 +163,10 @@
 	<!-- iPhone Frame -->
 	<div class="w-80 h-[600px] bg-foreground rounded-[2.5rem] p-2 shadow-2xl">
 		<!-- Screen -->
-		<div class="w-full h-full bg-background rounded-[2rem] overflow-hidden relative">
+		<div
+			class="w-full h-full bg-background rounded-[2rem] overflow-hidden relative"
+			data-export-capture="screen"
+		>
 			<!-- Status Bar -->
 			<div class="bg-foreground h-6 flex items-center justify-between px-6 text-background text-xs">
 				<span>9:41</span>
@@ -180,7 +183,7 @@
 			</div>
 
 			<!-- Content -->
-			<div class="h-[calc(100%-24px)]">
+			<div class="h-[calc(100%-24px)]" data-export-capture="app-content">
 				{#if previewState === 'preview' || previewState === 'video'}
 					<!-- Discord Chat UI -->
 					<div class="h-full flex flex-col" style="background-color: {backgroundColor}; font-family: {fontFamilyStack};">

@@ -76,6 +76,27 @@ const demoConversation: Array<{
 		characterId: 'char-demo-1',
 		text: 'Perfect. If this sequence plays smoothly, we are ready to export.',
 		replyTo: 'msg-demo-8'
+	},
+	{
+		id: 'msg-demo-11',
+		characterId: 'char-demo-2',
+		text: 'QA pass done. No clipping on 1080x1920, 720x1280, or 540x960.'
+	},
+	{
+		id: 'msg-demo-12',
+		characterId: 'char-demo-3',
+		text: 'I also checked contrast and avatar visibility on dark and light backgrounds.'
+	},
+	{
+		id: 'msg-demo-13',
+		characterId: 'char-demo-1',
+		text: 'Great. Ship this draft and queue the short teaser variant next.',
+		replyTo: 'msg-demo-11'
+	},
+	{
+		id: 'msg-demo-14',
+		characterId: 'char-demo-2',
+		text: 'Queued. Final export starts now with music at 30 percent and notifications enabled.'
 	}
 ];
 
