@@ -12,6 +12,9 @@ export interface ExportOptions {
 	quality: 'low' | 'medium' | 'high' | 'ultra';
 	channelName: string;
 	backgroundColor: string;
+	outputFileStream?: FileSystemWritableFileStream | null;
+	outputFileHandle?: FileSystemFileHandle | null;
+	outputFileStreamMode?: 'save-picker' | 'opfs-temp';
 	audio: {
 		musicEnabled: boolean;
 		musicVolume: number;
@@ -213,12 +216,21 @@ export class VideoExporter {
 			const MuxerClass = MuxerModule.Muxer as any;
 			const ArrayBufferTargetClass = MuxerModule.ArrayBufferTarget as any;
 			const StreamTargetClass = MuxerModule.StreamTarget as any;
+			const FileSystemWritableFileStreamTargetClass =
+				MuxerModule.FileSystemWritableFileStreamTarget as any;
+			const usingOutputFileStream =
+				Boolean(this.options.outputFileStream) &&
+				typeof FileSystemWritableFileStreamTargetClass === 'function';
 
 			type MuxerChunk = { position: number; data: Uint8Array<ArrayBuffer> };
 			const muxerChunks: MuxerChunk[] = [];
 			let muxerOutputSize = 0;
 			const target =
-				typeof StreamTargetClass === 'function'
+				usingOutputFileStream
+					? new FileSystemWritableFileStreamTargetClass(this.options.outputFileStream, {
+							chunkSize: 1024 * 1024
+						})
+					: typeof StreamTargetClass === 'function'
 					? new StreamTargetClass({
 							onData: (data: Uint8Array, position: number) => {
 								const chunkCopy = new Uint8Array(data.byteLength) as Uint8Array<ArrayBuffer>;
@@ -349,12 +361,8 @@ export class VideoExporter {
 
 						// Keep MP4 timestamps strictly monotonic for mp4-muxer.
 						const muxTimestamp = muxedVideoChunkCount * frameDurationUs;
-						const muxDuration = frameDurationUs;
 						muxedVideoChunkCount += 1;
-
-						const data = new Uint8Array(chunk.byteLength);
-						chunk.copyTo(data);
-						this.muxer.addVideoChunkRaw(data, chunk.type, muxTimestamp, muxDuration, meta);
+						this.muxer.addVideoChunk(chunk, meta, muxTimestamp);
 					} catch (error) {
 						console.error('Muxer video output error:', error);
 						this.setFatalError(error);
@@ -391,57 +399,71 @@ export class VideoExporter {
 
 			this.videoEncoder.configure(videoEncoderConfig);
 
-			// Setup Audio offline rendering if audio is needed
+			// Setup audio rendering if audio is needed.
+			// We intentionally avoid full OfflineAudioContext.startRendering() to keep
+			// memory usage bounded for long exports.
 			const audioEvents = extractAudioEventsFromTimeline(timeline);
 			if (audioPlan) {
-				try {
-					const audioSampleRate = audioPlan.encoderConfig.sampleRate;
-					const audioLength = Math.max(1, Math.ceil(audioSampleRate * adjustedDuration));
-					const offlineCtx = new OfflineAudioContext(2, audioLength, audioSampleRate);
-					let musicBuffer: AudioBuffer | null = null;
-					let notifBuffer: AudioBuffer | null = null;
+					try {
+						const audioSampleRate = audioPlan.encoderConfig.sampleRate;
+						const totalAudioSamples = Math.max(1, Math.ceil(audioSampleRate * adjustedDuration));
+						let musicBuffer: AudioBuffer | null = null;
+						let notifBuffer: AudioBuffer | null = null;
+						const needsDecodeContext =
+							Boolean(this.options.audio.musicEnabled && this.options.audio.musicTrackUrl) ||
+							Boolean(
+								this.options.audio.notificationEnabled && this.options.audio.notificationSoundUrl
+							);
+						const decodeContext = needsDecodeContext
+							? new AudioContext({ sampleRate: audioSampleRate })
+							: null;
 
-					// Fetch music
+						const decodeAudio = async (url: string): Promise<AudioBuffer> => {
+							const res = await fetch(url);
+							if (!res.ok) {
+								throw new Error(`Failed to load audio asset: ${res.status} ${res.statusText}`);
+							}
+							const arrayBuffer = await res.arrayBuffer();
+							if (!decodeContext) {
+								throw new Error('Audio decode context unavailable');
+							}
+							return await decodeContext.decodeAudioData(arrayBuffer);
+						};
+
 					if (this.options.audio.musicEnabled && this.options.audio.musicTrackUrl) {
-						const res = await fetch(this.options.audio.musicTrackUrl);
-						if (!res.ok) {
-							throw new Error(`Failed to load music track: ${res.status} ${res.statusText}`);
-						}
-						const arrayBuffer = await res.arrayBuffer();
-						musicBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-						const source = offlineCtx.createBufferSource();
-						source.buffer = musicBuffer;
-						source.loop = true;
-						const gain = offlineCtx.createGain();
-						gain.gain.value = this.options.audio.musicVolume;
-						source.connect(gain);
-						gain.connect(offlineCtx.destination);
-						source.start(0);
+						musicBuffer = await decodeAudio(this.options.audio.musicTrackUrl);
 					}
 
-					// Fetch notification
 					if (this.options.audio.notificationEnabled && this.options.audio.notificationSoundUrl) {
-						const res = await fetch(this.options.audio.notificationSoundUrl);
-						if (!res.ok) {
-							throw new Error(`Failed to load notification sound: ${res.status} ${res.statusText}`);
-						}
-						const arrayBuffer = await res.arrayBuffer();
-						notifBuffer = await offlineCtx.decodeAudioData(arrayBuffer);
-						
-						for (const event of audioEvents) {
-							if (
-								event.type === 'notification' &&
-								event.time / safeAnimationSpeed <= adjustedDuration
-							) {
-								const source = offlineCtx.createBufferSource();
-								source.buffer = notifBuffer;
-								source.connect(offlineCtx.destination);
-								source.start(event.time / safeAnimationSpeed);
+						notifBuffer = await decodeAudio(this.options.audio.notificationSoundUrl);
+					}
+
+						if (decodeContext) {
+							try {
+								await decodeContext.close();
+							} catch {
+								// Ignore decode context close failures.
 							}
 						}
-					}
 
-					const finalAudioBuffer = await offlineCtx.startRendering();
+					const musicLeft = musicBuffer ? musicBuffer.getChannelData(0) : null;
+					const musicRight = musicBuffer
+						? musicBuffer.getChannelData(Math.min(1, musicBuffer.numberOfChannels - 1))
+						: null;
+					const musicLength = musicBuffer?.length ?? 0;
+					const musicGain = Math.max(0, Math.min(1, this.options.audio.musicVolume));
+
+					const notifLeft = notifBuffer ? notifBuffer.getChannelData(0) : null;
+					const notifRight = notifBuffer
+						? notifBuffer.getChannelData(Math.min(1, notifBuffer.numberOfChannels - 1))
+						: null;
+					const notifLength = notifBuffer?.length ?? 0;
+
+					const notificationStarts = audioEvents
+						.filter((event) => event.type === 'notification')
+						.map((event) => Math.max(0, Math.round((event.time / safeAnimationSpeed) * audioSampleRate)))
+						.filter((startSample) => startSample < totalAudioSamples)
+						.sort((a, b) => a - b);
 
 					this.audioEncoder = new AudioEncoder({
 						output: (chunk, meta) => {
@@ -460,17 +482,57 @@ export class VideoExporter {
 					});
 
 					this.audioEncoder.configure(audioPlan.encoderConfig);
-					
-					const channelData = [finalAudioBuffer.getChannelData(0), finalAudioBuffer.getChannelData(1)];
-					const numSamples = finalAudioBuffer.length;
+
 					let offset = 0;
-					const chunkSize = audioSampleRate;
-					while (offset < numSamples) {
-						const curSize = Math.min(chunkSize, numSamples - offset);
+					const chunkSize = Math.max(1, Math.round(audioSampleRate / 10));
+					let nextNotificationIdx = 0;
+					const activeNotificationStarts: number[] = [];
+
+					while (offset < totalAudioSamples) {
+						const curSize = Math.min(chunkSize, totalAudioSamples - offset);
+						const chunkEnd = offset + curSize;
+
+						while (
+							nextNotificationIdx < notificationStarts.length &&
+							notificationStarts[nextNotificationIdx] < chunkEnd
+						) {
+							activeNotificationStarts.push(notificationStarts[nextNotificationIdx]);
+							nextNotificationIdx += 1;
+						}
+
 						const planarData = new Float32Array(curSize * 2);
-						planarData.set(channelData[0].subarray(offset, offset + curSize), 0);
-						planarData.set(channelData[1].subarray(offset, offset + curSize), curSize);
-						
+						const left = planarData.subarray(0, curSize);
+						const right = planarData.subarray(curSize);
+
+						for (let i = 0; i < curSize; i += 1) {
+							const sampleIndex = offset + i;
+							let l = 0;
+							let r = 0;
+
+							if (musicLeft && musicRight && musicLength > 0) {
+								const musicIndex = sampleIndex % musicLength;
+								l += musicLeft[musicIndex] * musicGain;
+								r += musicRight[musicIndex] * musicGain;
+							}
+
+							if (notifLeft && notifRight && notifLength > 0 && activeNotificationStarts.length > 0) {
+								for (let idx = activeNotificationStarts.length - 1; idx >= 0; idx -= 1) {
+									const notifIndex = sampleIndex - activeNotificationStarts[idx];
+									if (notifIndex >= notifLength) {
+										activeNotificationStarts.splice(idx, 1);
+										continue;
+									}
+									if (notifIndex >= 0) {
+										l += notifLeft[notifIndex];
+										r += notifRight[notifIndex];
+									}
+								}
+							}
+
+							left[i] = Math.max(-1, Math.min(1, l));
+							right[i] = Math.max(-1, Math.min(1, r));
+						}
+
 						const audioData = new AudioData({
 							format: 'f32-planar',
 							sampleRate: audioSampleRate,
@@ -483,7 +545,12 @@ export class VideoExporter {
 						audioData.close();
 						offset += curSize;
 					}
+
 					await this.audioEncoder.flush();
+
+					// Drop references to decoded PCM buffers as soon as possible.
+					musicBuffer = null;
+					notifBuffer = null;
 				} catch (err) {
 					console.warn('Failed to generate offline audio track:', err);
 				}
@@ -659,7 +726,32 @@ export class VideoExporter {
 			this.throwIfFatalError();
 			this.muxer.finalize();
 			this.throwIfFatalError();
-			
+			try {
+				this.videoEncoder.close();
+			} catch {
+				// Ignore close errors after successful finalize.
+			}
+			this.videoEncoder = null;
+			try {
+				this.audioEncoder?.close();
+			} catch {
+				// Ignore close errors after successful finalize.
+			}
+			this.audioEncoder = null;
+
+			if (usingOutputFileStream && this.options.outputFileStream) {
+				await this.options.outputFileStream.close();
+				this.options.outputFileStream = null;
+				const streamMode = this.options.outputFileStreamMode ?? 'save-picker';
+				if (streamMode === 'opfs-temp' && this.options.outputFileHandle) {
+					const exportedFile = await this.options.outputFileHandle.getFile();
+					this.options.outputFileHandle = null;
+					return exportedFile;
+				}
+				this.options.outputFileHandle = null;
+				return null;
+			}
+
 			const mimeType = format === 'mp4' ? 'video/mp4' : 'video/webm';
 			let blob: Blob;
 
@@ -694,6 +786,17 @@ export class VideoExporter {
 
 			return blob;
 		} catch (error) {
+			if (this.options?.outputFileStream) {
+				try {
+					await this.options.outputFileStream.abort();
+				} catch {
+					// Ignore stream abort errors after export failure.
+				}
+				this.options.outputFileStream = null;
+			}
+			if (this.options) {
+				this.options.outputFileHandle = null;
+			}
 			this.setFatalError(error);
 			onProgress({
 				phase: 'cancelled',
@@ -705,12 +808,22 @@ export class VideoExporter {
 			throw this.fatalError ?? (error instanceof Error ? error : new Error(String(error)));
 		} finally {
 			this.isRecording = false;
+			this.muxer = null;
 		}
 	}
 
 	cancel(): void {
 		this.isCancelled = true;
 		this.isRecording = false;
+		if (this.options?.outputFileStream) {
+			this.options.outputFileStream.abort().catch(() => {
+				// Ignore stream abort errors during cancellation.
+			});
+			this.options.outputFileStream = null;
+		}
+		if (this.options) {
+			this.options.outputFileHandle = null;
+		}
 		try {
 			this.videoEncoder?.close();
 		} catch {
@@ -726,11 +839,27 @@ export class VideoExporter {
 	destroy(): void {
 		this.cancel();
 
+		if (this.ctx && this.canvas) {
+			try {
+				this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+			} catch {
+				// Ignore canvas clear errors during teardown.
+			}
+		}
+		if (this.canvas) {
+			// Explicitly release backing store for large export canvases.
+			this.canvas.width = 0;
+			this.canvas.height = 0;
+		}
+
 		this.canvas = null;
 		this.ctx = null;
 		this.videoEncoder = null;
 		this.audioEncoder = null;
 		this.muxer = null;
+		this.options = null;
+		this.fatalError = null;
+		this.startTime = 0;
 	}
 
 	getIsRecording(): boolean {

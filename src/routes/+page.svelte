@@ -270,6 +270,87 @@
 		startVideoExport();
 	}
 
+	function buildExportFilename(format: 'mp4' | 'webm', channelName: string): string {
+		const safeName = (channelName || 'video')
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '-')
+			.replace(/^-+|-+$/g, '') || 'video';
+		const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+		return `convly-${safeName}-${timestamp}.${format}`;
+	}
+
+	type ExportOutputTarget = {
+		stream: FileSystemWritableFileStream | null;
+		handle: FileSystemFileHandle | null;
+		mode: 'save-picker' | 'opfs-temp' | 'none';
+		cleanup: (() => Promise<void>) | null;
+	};
+
+	async function prepareOutputFileTarget(
+		format: 'mp4' | 'webm',
+		channelName: string
+	): Promise<ExportOutputTarget> {
+		if (typeof window === 'undefined') {
+			return { stream: null, handle: null, mode: 'none', cleanup: null };
+		}
+
+		const pickerWindow = window as Window & {
+			showSaveFilePicker?: (options?: Record<string, unknown>) => Promise<FileSystemFileHandle>;
+		};
+
+		if (typeof pickerWindow.showSaveFilePicker === 'function') {
+			try {
+				const fileHandle = await pickerWindow.showSaveFilePicker({
+					suggestedName: buildExportFilename(format, channelName),
+					types: [
+						{
+							description: format === 'mp4' ? 'MP4 Video' : 'WebM Video',
+							accept:
+								format === 'mp4'
+									? { 'video/mp4': ['.mp4'] }
+									: { 'video/webm': ['.webm'] }
+						}
+					]
+				});
+				const stream = await fileHandle.createWritable();
+				return { stream, handle: fileHandle, mode: 'save-picker', cleanup: null };
+			} catch (error) {
+				if (!(error instanceof DOMException && error.name === 'AbortError')) {
+					console.warn('Failed to open file save picker, trying OPFS fallback.', error);
+				}
+			}
+		}
+
+		const storageWithDirectory = navigator.storage as StorageManager & {
+			getDirectory?: () => Promise<FileSystemDirectoryHandle>;
+		};
+		if (typeof storageWithDirectory.getDirectory === 'function') {
+			try {
+				// Disk-backed fallback avoids large in-memory mux buffers when save picker is unavailable.
+				const rootDirectory = await storageWithDirectory.getDirectory();
+				const tempFilename = `convly-temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${format}`;
+				const fileHandle = await rootDirectory.getFileHandle(tempFilename, { create: true });
+				const stream = await fileHandle.createWritable();
+				return {
+					stream,
+					handle: fileHandle,
+					mode: 'opfs-temp',
+					cleanup: async () => {
+						try {
+							await rootDirectory.removeEntry(tempFilename);
+						} catch (cleanupError) {
+							console.warn('Failed to cleanup temporary OPFS export file.', cleanupError);
+						}
+					}
+				};
+			} catch (error) {
+				console.warn('Failed to prepare OPFS export target, falling back to in-memory download.', error);
+			}
+		}
+
+		return { stream: null, handle: null, mode: 'none', cleanup: null };
+	}
+
 	async function waitForLivePreviewElement(timeoutMs = 5000): Promise<HTMLDivElement> {
 		const start = performance.now();
 
@@ -303,6 +384,11 @@
 		};
 
 		const resolution = getResolutionPreset($customizeSettings.resolution);
+		const exportFormat = $customizeSettings.exportFormat;
+		const exportChannelName = $customizeSettings.channelName || 'general';
+		const outputTarget = await prepareOutputFileTarget(exportFormat, exportChannelName);
+		let outputTargetCleanup = outputTarget.cleanup;
+		let cleanupDeferred = false;
 
 		videoExporter = new VideoExporter();
 
@@ -327,12 +413,15 @@
 				width: resolution.width,
 				height: resolution.height,
 				fps: normalizedFps,
-				format: $customizeSettings.exportFormat,
+				format: exportFormat,
 				codec: $customizeSettings.codec,
 				animationSpeed: normalizedAnimationSpeed,
 				quality: $customizeSettings.quality,
-				channelName: $customizeSettings.channelName || 'general',
+				channelName: exportChannelName,
 				backgroundColor: $customizeSettings.backgroundColor || '#313338',
+				outputFileStream: outputTarget.stream,
+				outputFileHandle: outputTarget.handle,
+				outputFileStreamMode: outputTarget.mode === 'none' ? undefined : outputTarget.mode,
 				audio: {
 					musicEnabled: $customizeSettings.musicEnabled && Boolean(musicTrackUrl),
 					musicVolume: $customizeSettings.musicVolume,
@@ -354,15 +443,30 @@
 				}
 			);
 
-			if (blob) {
+			const didCancel = exportProgress?.phase === 'cancelled';
+			if (!didCancel) {
 				exportProgress = {
 					...exportProgress,
 					phase: 'finalizing',
 					percent: 99
 				};
+			}
 
+			if (blob) {
 				downloadVideo(blob, $customizeSettings.channelName || 'video');
+				if (outputTarget.mode === 'opfs-temp' && outputTargetCleanup) {
+					cleanupDeferred = true;
+					const cleanupFn = outputTargetCleanup;
+					outputTargetCleanup = null;
+					setTimeout(() => {
+						cleanupFn().catch((cleanupError) => {
+							console.warn('Failed to cleanup temporary OPFS export file.', cleanupError);
+						});
+					}, 60000);
+				}
+			}
 
+			if (!didCancel) {
 				exportProgress = {
 					...exportProgress,
 					phase: 'complete',
@@ -379,6 +483,15 @@
 				elapsedMs: 0
 			};
 		} finally {
+			if (!cleanupDeferred && outputTargetCleanup) {
+				try {
+					await outputTargetCleanup();
+				} catch (cleanupError) {
+					console.warn('Failed to cleanup temporary OPFS export file.', cleanupError);
+				}
+				outputTargetCleanup = null;
+			}
+
 			if (videoExporter) {
 				videoExporter.destroy();
 				videoExporter = null;
@@ -392,7 +505,7 @@
 				previousIsMusicPlaying &&
 				Boolean(musicTrackUrl) &&
 				($customizeSettings.musicEnabled ?? true);
-			
+
 			setTimeout(() => {
 				isExporting = false;
 				exportProgress = null;
