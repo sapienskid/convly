@@ -15,10 +15,12 @@
 	import { VideoExporter, downloadVideo, getResolutionPreset, type ExportProgress } from '$lib/utils/videoExport';
 	
 	let isRightPanelCollapsed = $state(false);
+	const graphReadOnly = true;
 	let editorView = $state<'graph' | 'json'>('graph');
 	let jsonEditorValue = $state('');
 	let jsonEditorError = $state<string | null>(null);
 	let jsonEditorStatus = $state<string | null>(null);
+	let jsonEditorDirty = $state(false);
 	
 	// Video Controls State
 	let isVideoPlaying = $state(false);
@@ -656,8 +658,9 @@
 		updateMessageText,
 		updateCharacter,
 		addMessageForCharacter,
-		handleApplyCustomization,
 		importConversationFromJSON,
+		sendMessageFromPreview,
+		handleApplyCustomization,
 		deleteElement,
 		addCharacter,
 		addMessage
@@ -665,12 +668,22 @@
 	import type { Tool } from '$lib/types';
 
 	function handleToolSelect(tool: Tool) {
+		if (graphReadOnly && (tool === 'character' || tool === 'message')) {
+			return;
+		}
 		selectedTool.set(tool);
 		// Deselect element when switching tools
 		if (tool !== 'select') {
 			selectedElement.set(null);
 		}
 	}
+
+	$effect(() => {
+		if (!graphReadOnly) return;
+		if ($selectedTool === 'character' || $selectedTool === 'message') {
+			selectedTool.set('select');
+		}
+	});
 
 	function handleKeyboardShortcut(event: KeyboardEvent) {
 		// Ignore if typing in an input/textarea
@@ -689,10 +702,12 @@
 				handleToolSelect('pan');
 				break;
 			case 'c':
+				if (graphReadOnly) break;
 				event.preventDefault();
 				handleToolSelect('character');
 				break;
 			case 'm':
+				if (graphReadOnly) break;
 				event.preventDefault();
 				handleToolSelect('message');
 				break;
@@ -705,7 +720,11 @@
 		
 		// Delete shortcut
 		if (event.key === 'Delete' || event.key === 'Backspace') {
-			if ($selectedElement && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) {
+			if (
+				!graphReadOnly &&
+				$selectedElement &&
+				!(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)
+			) {
 				event.preventDefault();
 				handleDelete();
 			}
@@ -713,7 +732,7 @@
 		
 		// Duplicate shortcut (Ctrl/Cmd + D)
 		if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
-			if ($selectedElement) {
+			if (!graphReadOnly && $selectedElement) {
 				event.preventDefault();
 				handleDuplicate();
 			}
@@ -742,6 +761,7 @@
 	);
 
 	function handleDelete() {
+		if (graphReadOnly) return;
 		const element = $selectedElement;
 		if (!element) return;
 		
@@ -757,6 +777,7 @@
 	}
 
 	function handleDuplicate() {
+		if (graphReadOnly) return;
 		const element = $selectedElement;
 		if (!element) return;
 		
@@ -819,12 +840,36 @@
 		);
 	}
 
+	function buildConversationSignature(): string {
+		const characterSignature = $characters
+			.map((character) => `${character.id}:${character.username}`)
+			.join('|');
+		const orderedMessages =
+			animationTimeline.orderedMessages.length > 0 ? animationTimeline.orderedMessages : $messages;
+		const messageSignature = orderedMessages
+			.map(
+				(message) =>
+					`${message.id}:${message.characterId ?? ''}:${message.replyTo ?? ''}:${message.timestamp}:${message.text}`
+			)
+			.join('|');
+		return `${characterSignature}::${messageSignature}`;
+	}
+
+	const conversationSyncSignature = $derived.by(() => buildConversationSignature());
+
+	$effect(() => {
+		conversationSyncSignature;
+		if (editorView !== 'json' || jsonEditorDirty) return;
+		jsonEditorValue = buildConversationJson();
+	});
+
 	function setEditorMode(mode: 'graph' | 'json') {
 		editorView = mode;
 		jsonEditorError = null;
 		jsonEditorStatus = null;
 		if (mode === 'json') {
 			jsonEditorValue = buildConversationJson();
+			jsonEditorDirty = false;
 		}
 	}
 
@@ -834,6 +879,9 @@
 			importConversationFromJSON(payload);
 			jsonEditorError = null;
 			jsonEditorStatus = 'Conversation JSON applied successfully.';
+			jsonEditorDirty = false;
+			jsonEditorValue = buildConversationJson();
+			editorView = 'graph';
 		} catch (error) {
 			jsonEditorStatus = null;
 			jsonEditorError =
@@ -847,7 +895,31 @@
 		jsonEditorValue = buildConversationJson();
 		jsonEditorError = null;
 		jsonEditorStatus = 'Conversation JSON reset from current graph.';
+		jsonEditorDirty = false;
 	}
+
+	function handleJsonEditorInput() {
+		jsonEditorDirty = true;
+		jsonEditorError = null;
+		jsonEditorStatus = null;
+	}
+
+	function handlePreviewSendMessage(payload: {
+		text: string;
+		characterId?: string | null;
+		replyTo?: string | null;
+	}) {
+		const createdId = sendMessageFromPreview(payload);
+		if (!createdId) return;
+		if (editorView === 'json' && jsonEditorDirty) {
+			jsonEditorStatus =
+				'Preview added a message. Use Reset to sync JSON or Apply JSON to replace graph.';
+		} else {
+			jsonEditorStatus = null;
+		}
+		jsonEditorError = null;
+	}
+
 </script>
 
 <svelte:window onkeydown={handleKeyboardShortcut} />
@@ -866,6 +938,7 @@
 		selectedTool={$selectedTool}
 		onToolSelect={handleToolSelect}
 		selectedElement={$selectedElement}
+		readOnly={graphReadOnly}
 		elementCount={{
 			characters: $characters.length,
 			messages: $messages.length,
@@ -881,7 +954,7 @@
 					<p class="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
 						Convly Studio
 					</p>
-					<p class="text-[0.68rem] font-medium text-foreground/80">Storyboard Workspace</p>
+					<p class="text-[0.68rem] font-medium text-foreground/80">Graph Workspace</p>
 				</div>
 				<div class="inline-flex rounded-md border border-border bg-muted/30 p-1">
 					<Button
@@ -905,6 +978,8 @@
 					<Button size="sm" variant="outline" onclick={handleJsonReset}>Reset</Button>
 					<Button size="sm" onclick={handleJsonApply}>Apply JSON</Button>
 				</div>
+			{:else}
+				<p class="text-xs text-muted-foreground">Graph read-only view</p>
 			{/if}
 		</div>
 
@@ -916,6 +991,7 @@
 					connections={$connections}
 					selectedTool={$selectedTool}
 					selectedElement={$selectedElement}
+					readOnly={graphReadOnly}
 					onCharacterMove={updateCharacterPosition}
 					onMessageMove={updateMessagePosition}
 					onMessageTextUpdate={updateMessageText}
@@ -924,15 +1000,15 @@
 					onAddMessage={addMessageForCharacter}
 					onCharacterEdit={handleCharacterEdit}
 				/>
-				{:else}
-					<div class="flex h-full flex-col gap-3 p-4">
-						<p class="text-xs text-muted-foreground">
-							Edit only conversation messages as JSON. Use
-							<span class="font-semibold">Apply JSON</span> to rebuild the graph.
-						</p>
+			{:else}
+				<div class="flex h-full flex-col gap-3 p-4">
+					<p class="text-xs text-muted-foreground">
+						Use JSON for bulk creation/import. Apply replaces current conversation graph.
+					</p>
 					<textarea
 						class="h-full min-h-0 w-full flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						bind:value={jsonEditorValue}
+						oninput={handleJsonEditorInput}
 						spellcheck="false"
 					></textarea>
 					{#if jsonEditorError}
@@ -950,6 +1026,7 @@
 				selectedTool={$selectedTool}
 				onToolSelect={handleToolSelect}
 				selectedElement={$selectedElement}
+				readOnly={graphReadOnly}
 				elementCount={{
 					characters: $characters.length,
 					messages: $messages.length,
@@ -975,6 +1052,8 @@
 							isGenerating={$isGenerating}
 							customizeSettings={$customizeSettings}
 							currentTime={videoCurrentTime}
+							interactive={true}
+							onSendMessage={handlePreviewSendMessage}
 						/>
 					</div>
 					
