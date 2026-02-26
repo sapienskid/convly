@@ -35,6 +35,8 @@ export function analyzeMessageFlow(messages: Message[], connections: Connection[
 
 	const adjacencyList = new Map<string, string[]>();
 	const inDegree = new Map<string, number>();
+	const incomingCount = new Map<string, number>();
+	const outgoingCount = new Map<string, number>();
 	for (const nodeId of flowNodeIds) {
 		adjacencyList.set(nodeId, []);
 		inDegree.set(nodeId, 0);
@@ -44,20 +46,38 @@ export function analyzeMessageFlow(messages: Message[], connections: Connection[
 	for (const connection of flowConnections) {
 		adjacencyList.get(connection.from)?.push(connection.to);
 		inDegree.set(connection.to, (inDegree.get(connection.to) || 0) + 1);
+		outgoingCount.set(connection.from, (outgoingCount.get(connection.from) || 0) + 1);
+		incomingCount.set(connection.to, (incomingCount.get(connection.to) || 0) + 1);
 	}
 
 	// Topological sort (flow-first), preserving message list order for ties.
 	const queue: string[] = [];
 	const sortedFlow: string[] = [];
 	const levels = new Map<string, number>();
+	const enqueueByOrder = (nodeId: string) => {
+		if (queue.length === 0) {
+			queue.push(nodeId);
+			return;
+		}
+
+		const nodeOrder = orderIndex.get(nodeId) ?? Number.MAX_SAFE_INTEGER;
+		let insertAt = queue.length;
+		for (let i = 0; i < queue.length; i += 1) {
+			const queuedOrder = orderIndex.get(queue[i]) ?? Number.MAX_SAFE_INTEGER;
+			if (nodeOrder < queuedOrder) {
+				insertAt = i;
+				break;
+			}
+		}
+		queue.splice(insertAt, 0, nodeId);
+	};
 
 	for (const nodeId of flowNodeIds) {
 		if ((inDegree.get(nodeId) || 0) === 0) {
-			queue.push(nodeId);
+			enqueueByOrder(nodeId);
 			levels.set(nodeId, 0);
 		}
 	}
-	queue.sort(compareByOrder);
 
 	while (queue.length > 0) {
 		const current = queue.shift()!;
@@ -70,8 +90,7 @@ export function analyzeMessageFlow(messages: Message[], connections: Connection[
 			levels.set(neighbor, Math.max(levels.get(neighbor) ?? 0, currentLevel + 1));
 
 			if (nextDegree === 0) {
-				queue.push(neighbor);
-				queue.sort(compareByOrder);
+				enqueueByOrder(neighbor);
 			}
 		}
 	}
@@ -99,8 +118,8 @@ export function analyzeMessageFlow(messages: Message[], connections: Connection[
 			const message = messageMap.get(id);
 			if (!message) return null;
 
-			const hasIncoming = flowConnections.some((connection) => connection.to === id);
-			const hasOutgoing = flowConnections.some((connection) => connection.from === id);
+			const hasIncoming = (incomingCount.get(id) || 0) > 0;
+			const hasOutgoing = (outgoingCount.get(id) || 0) > 0;
 
 			return {
 				message,

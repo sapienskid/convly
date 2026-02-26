@@ -228,7 +228,7 @@
 
 	const scrollSignal = $derived.by(() => {
 		const lastMessage = renderedMessages[renderedMessages.length - 1];
-		return `${previewState}:${currentTime}:${renderedMessages.length}:${lastMessage?.message.id ?? ''}:${lastMessage?.text.length ?? 0}:${typingIndicatorCharacterId ?? ''}`;
+		return `${previewState}:${renderedMessages.length}:${lastMessage?.message.id ?? ''}:${lastMessage?.text.length ?? 0}:${typingIndicatorCharacterId ?? ''}`;
 	});
 
 	$effect(() => {
