@@ -9,6 +9,7 @@ import {
 	type CustomizationSettings
 } from '$lib/types';
 import { loadFromIndexedDB, saveToIndexedDB } from '$lib/utils/indexedDB';
+import { analyzeMessageFlow } from '$lib/utils/messageFlow';
 
 const demoCharacters: Character[] = [
 	{
@@ -147,6 +148,146 @@ function mergeCustomizationSettings(
 }
 
 const flowColors = ['#ff6f3b', '#0ea5a4', '#2563eb', '#f59e0b', '#ef4444', '#14b8a6', '#0f766e', '#64748b'];
+
+const GRAPH_LAYOUT = {
+	characterColumnX: 100,
+	columnGap: 540,
+	characterVerticalSpacing: 260,
+	messageBaseGap: 96,
+	newMessageVerticalSpacing: 340,
+	speakerLaneOffset: 120,
+	replyIndent: 86,
+	minMessageHeight: 230,
+	maxMessageHeight: 860,
+	messageNodeWidth: 360,
+	overlapPadding: 18
+} as const;
+
+function estimateMessageNodeHeight(message: Message): number {
+	const text = message.text.trim();
+	const approxCharsPerLine = 34;
+	const explicitLineBreaks = Math.max(0, text.split(/\r?\n/).length - 1);
+	const estimatedLines = Math.max(1, Math.ceil(text.length / approxCharsPerLine) + explicitLineBreaks);
+	const cappedLines = Math.min(estimatedLines, 32);
+	const textHeight = cappedLines * 22;
+	const replyHeight = message.replyTo ? 84 : 0;
+	const rawHeight = 162 + textHeight + replyHeight;
+	return Math.max(
+		GRAPH_LAYOUT.minMessageHeight,
+		Math.min(GRAPH_LAYOUT.maxMessageHeight, rawHeight)
+	);
+}
+
+function hasOverlappingMessages(allMessages: Message[]): boolean {
+	const getMessageBounds = (message: Message) => ({
+		left: message.position.x - GRAPH_LAYOUT.overlapPadding,
+		right:
+			message.position.x +
+			GRAPH_LAYOUT.messageNodeWidth +
+			GRAPH_LAYOUT.overlapPadding,
+		top: message.position.y - GRAPH_LAYOUT.overlapPadding,
+		bottom:
+			message.position.y +
+			estimateMessageNodeHeight(message) +
+			GRAPH_LAYOUT.overlapPadding
+	});
+
+	for (let i = 0; i < allMessages.length; i += 1) {
+		for (let j = i + 1; j < allMessages.length; j += 1) {
+			const currentBounds = getMessageBounds(allMessages[i]);
+			const compareBounds = getMessageBounds(allMessages[j]);
+			const overlapsHorizontally =
+				currentBounds.left < compareBounds.right &&
+				currentBounds.right > compareBounds.left;
+			const overlapsVertically =
+				currentBounds.top < compareBounds.bottom &&
+				currentBounds.bottom > compareBounds.top;
+
+			if (overlapsHorizontally && overlapsVertically) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+function buildAutoLayout(
+	allCharacters: Character[],
+	allMessages: Message[],
+	allConnections: Connection[]
+): { characters: Character[]; messages: Message[] } {
+	if (allCharacters.length === 0 && allMessages.length === 0) {
+		return { characters: allCharacters, messages: allMessages };
+	}
+
+	const sortedCharacters = [...allCharacters].sort((a, b) => a.position.y - b.position.y);
+	const minCharacterX =
+		sortedCharacters.length > 0
+			? Math.min(...sortedCharacters.map((character) => character.position.x))
+			: GRAPH_LAYOUT.characterColumnX;
+	const characterColumnX = Math.max(60, Math.round(minCharacterX));
+	const messageColumnX = characterColumnX + GRAPH_LAYOUT.columnGap;
+
+	const minYSource = [...sortedCharacters.map((character) => character.position.y), ...allMessages.map((message) => message.position.y)];
+	const startY = Math.max(70, Math.round((minYSource.length > 0 ? Math.min(...minYSource) : 80) - 10));
+
+	const arrangedCharacterList = sortedCharacters.map((character, index) => ({
+		...character,
+		position: {
+			x: characterColumnX,
+			y: startY + index * GRAPH_LAYOUT.characterVerticalSpacing
+		}
+	}));
+	const characterIndexById = new Map(
+		arrangedCharacterList.map((character, index) => [character.id, index])
+	);
+	const laneCenter =
+		arrangedCharacterList.length > 1 ? (arrangedCharacterList.length - 1) / 2 : 0;
+
+	const flowOrderedMessages = analyzeMessageFlow(allMessages, allConnections).map(
+		(info) => info.message
+	);
+	const seenMessageIds = new Set(flowOrderedMessages.map((message) => message.id));
+	const orderedMessages = [
+		...flowOrderedMessages,
+		...allMessages.filter((message) => !seenMessageIds.has(message.id))
+	];
+
+	let nextMessageY = startY;
+	const arrangedMessageList = orderedMessages.map((message) => {
+		const laneIndex = message.characterId
+			? (characterIndexById.get(message.characterId) ?? 0)
+			: 0;
+		const laneOffset =
+			arrangedCharacterList.length > 1
+				? (laneIndex - laneCenter) * GRAPH_LAYOUT.speakerLaneOffset
+				: 0;
+		const replyOffset = message.replyTo ? GRAPH_LAYOUT.replyIndent : 0;
+		const yPosition = Math.round(nextMessageY);
+		nextMessageY += estimateMessageNodeHeight(message) + GRAPH_LAYOUT.messageBaseGap;
+
+		return {
+			...message,
+			position: {
+				x: Math.round(messageColumnX + laneOffset + replyOffset),
+				y: yPosition
+			}
+		};
+	});
+
+	const arrangedCharacterById = new Map(
+		arrangedCharacterList.map((character) => [character.id, character])
+	);
+	const arrangedMessageById = new Map(arrangedMessageList.map((message) => [message.id, message]));
+
+	return {
+		characters: allCharacters.map(
+			(character) => arrangedCharacterById.get(character.id) ?? character
+		),
+		messages: allMessages.map((message) => arrangedMessageById.get(message.id) ?? message)
+	};
+}
 
 function getMessageToMessageHandles(fromMessage: Message, toMessage: Message) {
 	const dx = toMessage.position.x - fromMessage.position.x;
@@ -327,22 +468,34 @@ export async function initializeStore() {
 			data.messages && data.messages.length > 0 ? data.messages : demoMessages;
 		const loadedConnections =
 			data.connections && data.connections.length > 0 ? data.connections : demoConnections;
+		const arrangedLoadedGraph = buildAutoLayout(
+			loadedCharacters,
+			loadedMessages,
+			loadedConnections
+		);
 		const normalizedConnections = normalizeConnections(
 			loadedConnections,
-			loadedCharacters,
-			loadedMessages
+			arrangedLoadedGraph.characters,
+			arrangedLoadedGraph.messages
 		);
 
-		characters.set(loadedCharacters);
-		messages.set(loadedMessages);
+		characters.set(arrangedLoadedGraph.characters);
+		messages.set(arrangedLoadedGraph.messages);
 		connections.set(normalizedConnections);
 		
 		customizeSettings.set(mergeCustomizationSettings(data.customizeSettings));
 	} catch (error) {
 		console.error('Failed to load from IndexedDB, using demo data:', error);
-		characters.set(demoCharacters);
-		messages.set(demoMessages);
-		connections.set(normalizeConnections(demoConnections, demoCharacters, demoMessages));
+		const arrangedDemoGraph = buildAutoLayout(demoCharacters, demoMessages, demoConnections);
+		characters.set(arrangedDemoGraph.characters);
+		messages.set(arrangedDemoGraph.messages);
+		connections.set(
+			normalizeConnections(
+				demoConnections,
+				arrangedDemoGraph.characters,
+				arrangedDemoGraph.messages
+			)
+		);
 		customizeSettings.set(defaultCustomizationSettings);
 	}
 	
@@ -358,14 +511,15 @@ export function loadLongDemoConversation() {
 		...message,
 		position: { ...message.position }
 	}));
+	const arrangedDemoGraph = buildAutoLayout(clonedCharacters, clonedMessages, demoConnections);
 	const normalizedConnections = normalizeConnections(
 		demoConnections,
-		clonedCharacters,
-		clonedMessages
+		arrangedDemoGraph.characters,
+		arrangedDemoGraph.messages
 	);
 
-	characters.set(clonedCharacters);
-	messages.set(clonedMessages);
+	characters.set(arrangedDemoGraph.characters);
+	messages.set(arrangedDemoGraph.messages);
 	connections.set(normalizedConnections);
 	nodeConnectionModes.set({});
 	selectedElement.set(clonedMessages[0]?.id ?? null);
@@ -438,6 +592,137 @@ export const getConnectionsForElement = (elementId: string) =>
 	derived(connections, ($connections) =>
 		$connections.filter((c) => c.from === elementId || c.to === elementId)
 	);
+
+export function autoArrangeGraph(options: { force?: boolean } = { force: true }): boolean {
+	const allCharacters = get(characters);
+	const allMessages = get(messages);
+	const allConnections = get(connections);
+	const force = options.force ?? true;
+
+	if (allCharacters.length === 0 && allMessages.length === 0) {
+		return false;
+	}
+
+	if (!force && !hasOverlappingMessages(allMessages)) {
+		return false;
+	}
+
+	const arrangedGraph = buildAutoLayout(allCharacters, allMessages, allConnections);
+	const normalizedConnections = normalizeConnections(
+		allConnections,
+		arrangedGraph.characters,
+		arrangedGraph.messages
+	);
+
+	characters.set(arrangedGraph.characters);
+	messages.set(arrangedGraph.messages);
+	connections.set(normalizedConnections);
+	return true;
+}
+
+export function sendMessageFromPreview(input: {
+	text: string;
+	characterId?: string | null;
+	replyTo?: string | null;
+}): string | null {
+	const text = input.text.trim();
+	if (!text) return null;
+
+	const allCharacters = get(characters);
+	if (allCharacters.length === 0) return null;
+
+	const allMessages = get(messages);
+	const allConnections = get(connections);
+	const characterById = new Map(allCharacters.map((character) => [character.id, character]));
+	const resolvedCharacterId =
+		(input.characterId && characterById.has(input.characterId)
+			? input.characterId
+			: allMessages[allMessages.length - 1]?.characterId ?? allCharacters[0]?.id) ?? null;
+
+	const id = `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+	const message: Message = {
+		id,
+		characterId: resolvedCharacterId ?? undefined,
+		text,
+		position: {
+			x: GRAPH_LAYOUT.characterColumnX + GRAPH_LAYOUT.columnGap,
+			y: 100 + allMessages.length * GRAPH_LAYOUT.newMessageVerticalSpacing
+		},
+		timestamp: new Date().toISOString()
+	};
+
+	if (
+		input.replyTo &&
+		input.replyTo !== id &&
+		allMessages.some((existingMessage) => existingMessage.id === input.replyTo)
+	) {
+		message.replyTo = input.replyTo;
+	}
+
+	const nextMessages = [...allMessages, message];
+	const nextConnections = [...allConnections];
+
+	if (message.characterId) {
+		const character = characterById.get(message.characterId);
+		if (character) {
+			nextConnections.push({
+				id: `conn-preview-assign-${id}-${character.id}`,
+				from: id,
+				to: character.id,
+				type: 'assignment',
+				color: character.roleColor
+			});
+		}
+	}
+
+	if (allMessages.length > 0) {
+		const orderedMessages = analyzeMessageFlow(allMessages, allConnections).map(
+			(info) => info.message
+		);
+		const previousMessage =
+			orderedMessages[orderedMessages.length - 1] ?? allMessages[allMessages.length - 1];
+		if (
+			previousMessage &&
+			!nextConnections.some(
+				(connection) =>
+					connection.type === 'flow' &&
+					connection.from === previousMessage.id &&
+					connection.to === id
+			)
+		) {
+			nextConnections.push({
+				id: `conn-preview-flow-${previousMessage.id}-${id}`,
+				from: previousMessage.id,
+				to: id,
+				type: 'flow',
+				color: flowColors[nextMessages.length % flowColors.length]
+			});
+		}
+	}
+
+	if (message.replyTo) {
+		nextConnections.push({
+			id: `conn-preview-reply-${id}-${message.replyTo}`,
+			from: id,
+			to: message.replyTo,
+			type: 'reply',
+			color: '#94a3b8'
+		});
+	}
+
+	const normalizedConnections = normalizeConnections(
+		nextConnections,
+		allCharacters,
+		nextMessages
+	);
+
+	messages.set(nextMessages);
+	connections.set(normalizedConnections);
+	selectedElement.set(id);
+	propagateSpeakerAssignments();
+	autoArrangeGraph({ force: true });
+	return id;
+}
 
 // Character actions
 export function addCharacter(character: Omit<Character, 'id'>): string {
@@ -724,6 +1009,7 @@ export function addCharacterAtPosition(position: { x: number; y: number }): stri
 
 	const id = addCharacter(newCharacter);
 	selectedElement.set(id);
+	autoArrangeGraph({ force: false });
 	return id;
 }
 
@@ -743,6 +1029,7 @@ export function addMessageAtPosition(position: { x: number; y: number }): string
 
 	const id = addMessage(newMessage);
 	selectedElement.set(id);
+	autoArrangeGraph({ force: false });
 	return id;
 }
 
@@ -753,8 +1040,9 @@ export function addMessageForCharacter(characterId: string): string {
 	if (!character) return '';
 
 	const characterMessages = msgs.filter((m) => m.characterId === characterId);
-	const baseX = character.position.x + 300;
-	const baseY = character.position.y + characterMessages.length * 140;
+	const baseX = character.position.x + 360;
+	const baseY =
+		character.position.y + characterMessages.length * GRAPH_LAYOUT.newMessageVerticalSpacing;
 
 	const newMessage = {
 		characterId,
@@ -778,6 +1066,7 @@ export function addMessageForCharacter(characterId: string): string {
 	});
 	selectedElement.set(id);
 	propagateSpeakerAssignments();
+	autoArrangeGraph({ force: false });
 	return id;
 }
 
@@ -892,6 +1181,8 @@ export function createConnection(
 		// When assigning a character, also propagate downstream
 		propagateSpeakerAssignments();
 	}
+
+	autoArrangeGraph({ force: false });
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -1053,30 +1344,24 @@ export function importConversationFromJSON(payload: unknown) {
 	for (const message of importedMessages) {
 		const character = importedCharacters.find((item) => item.id === message.characterId);
 		if (!character) continue;
-		const handles = getMessageToCharacterHandles(message, character);
 		importedConnections.push({
 			id: `conn-import-assign-${message.id}-${character.id}`,
 			from: message.id,
 			to: character.id,
 			type: 'assignment',
-			color: character.roleColor,
-			sourceHandle: handles.sourceHandle,
-			targetHandle: handles.targetHandle
+			color: character.roleColor
 		});
 	}
 
 	for (let i = 1; i < importedMessages.length; i++) {
 		const previous = importedMessages[i - 1];
 		const current = importedMessages[i];
-		const handles = getMessageToMessageHandles(previous, current);
 		importedConnections.push({
 			id: `conn-import-flow-${previous.id}-${current.id}`,
 			from: previous.id,
 			to: current.id,
 			type: 'flow',
-			color: flowColors[i % flowColors.length],
-			sourceHandle: handles.sourceHandle,
-			targetHandle: handles.targetHandle
+			color: flowColors[i % flowColors.length]
 		});
 	}
 
@@ -1107,35 +1392,37 @@ export function importConversationFromJSON(payload: unknown) {
 		const targetMessage = importedMessages.find((message) => message.id === targetId);
 		if (!sourceMessage || !targetMessage) continue;
 		sourceMessage.replyTo = targetId;
-		const handles = getMessageToMessageHandles(sourceMessage, targetMessage);
 		importedConnections.push({
 			id: `conn-import-reply-${sourceMessage.id}-${targetMessage.id}`,
 			from: sourceMessage.id,
 			to: targetMessage.id,
 			type: 'reply',
-			color: '#94a3b8',
-			sourceHandle: handles.sourceHandle,
-			targetHandle: handles.targetHandle
+			color: '#94a3b8'
 		});
 	}
 
+	const arrangedImportedGraph = buildAutoLayout(
+		importedCharacters,
+		importedMessages,
+		importedConnections
+	);
 	const normalizedConnections = normalizeConnections(
 		importedConnections,
-		importedCharacters,
-		importedMessages
+		arrangedImportedGraph.characters,
+		arrangedImportedGraph.messages
 	);
 
-	characters.set(importedCharacters);
-	messages.set(importedMessages);
+	characters.set(arrangedImportedGraph.characters);
+	messages.set(arrangedImportedGraph.messages);
 	connections.set(normalizedConnections);
 	nodeConnectionModes.set({});
-	selectedElement.set(importedMessages[0]?.id ?? null);
+	selectedElement.set(arrangedImportedGraph.messages[0]?.id ?? null);
 	previewState.set('preview');
 	propagateSpeakerAssignments();
 
 	return {
-		characters: importedCharacters.length,
-		messages: importedMessages.length,
+		characters: arrangedImportedGraph.characters.length,
+		messages: arrangedImportedGraph.messages.length,
 		connections: normalizedConnections.length
 	};
 }
@@ -1162,14 +1449,19 @@ export function importProjectData(payload: unknown) {
 		throw new Error('Project JSON must include at least one character or message.');
 	}
 
+	const arrangedProjectGraph = buildAutoLayout(
+		projectCharacters,
+		projectMessages,
+		projectConnections
+	);
 	const normalizedConnections = normalizeConnections(
 		projectConnections,
-		projectCharacters,
-		projectMessages
+		arrangedProjectGraph.characters,
+		arrangedProjectGraph.messages
 	);
 
-	characters.set(projectCharacters);
-	messages.set(projectMessages);
+	characters.set(arrangedProjectGraph.characters);
+	messages.set(arrangedProjectGraph.messages);
 	connections.set(normalizedConnections);
 	nodeConnectionModes.set({});
 	selectedElement.set(null);
