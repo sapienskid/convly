@@ -2,6 +2,7 @@
 	import type { Character, Message, Connection, CustomizationSettings } from '$lib/types';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { Progress } from '$lib/components/ui/progress';
+	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/components/ui/select';
 	import { analyzeMessageFlow } from '$lib/utils/messageFlow';
 	import {
 		buildMessageAnimationTimeline,
@@ -40,6 +41,11 @@
 	let composerText = $state('');
 	let selectedSpeakerId = $state('');
 	let replyTargetId = $state<string | null>(null);
+	let messageContextMenu = $state<{
+		messageId: string;
+		x: number;
+		y: number;
+	} | null>(null);
 
 	const messageFlowInfo = $derived(analyzeMessageFlow(messages, connections));
 	const orderedPreviewMessages = $derived(messageFlowInfo.map((info) => info.message));
@@ -86,6 +92,15 @@
 	const canCompose = $derived(interactive && previewState === 'preview');
 	const replyTargetMessage = $derived(
 		replyTargetId ? messageMap.get(replyTargetId) ?? null : null
+	);
+	const speakerOptions = $derived(
+		characters.map((character) => ({
+			value: character.id,
+			label: character.username
+		}))
+	);
+	const contextMenuMessage = $derived(
+		messageContextMenu ? messageMap.get(messageContextMenu.messageId) ?? null : null
 	);
 
 	const backgroundColor = $derived(customizeSettings.backgroundColor || '#1f2933');
@@ -184,9 +199,83 @@
 		}
 	});
 
+	$effect(() => {
+		if (!canCompose) {
+			messageContextMenu = null;
+		}
+	});
+
 	function toggleReplyTarget(messageId: string) {
 		if (!canCompose) return;
 		replyTargetId = replyTargetId === messageId ? null : messageId;
+		messageContextMenu = null;
+	}
+
+	function handleMessageRowKeyDown(event: KeyboardEvent, messageId: string) {
+		if (!canCompose) return;
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			toggleReplyTarget(messageId);
+		}
+	}
+
+	function openMessageContextMenu(event: MouseEvent, messageId: string) {
+		if (!canCompose) return;
+		event.preventDefault();
+		event.stopPropagation();
+		const menuWidth = 188;
+		const menuHeight = 124;
+		const x = Math.max(
+			8,
+			Math.min(event.clientX + 8, window.innerWidth - menuWidth - 8)
+		);
+		const y = Math.max(
+			8,
+			Math.min(event.clientY + 8, window.innerHeight - menuHeight - 8)
+		);
+		messageContextMenu = { messageId, x, y };
+	}
+
+	function closeMessageContextMenu() {
+		messageContextMenu = null;
+	}
+
+	function handleGlobalPointerDown(event: MouseEvent) {
+		if (!messageContextMenu) return;
+		const target = event.target as HTMLElement | null;
+		if (target?.closest('[data-message-context-menu]')) return;
+		messageContextMenu = null;
+	}
+
+	function handleGlobalKeyDown(event: KeyboardEvent) {
+		if (event.key === 'Escape') {
+			messageContextMenu = null;
+		}
+	}
+
+	function handleContextReplyToggle() {
+		if (!contextMenuMessage) return;
+		toggleReplyTarget(contextMenuMessage.id);
+	}
+
+	async function handleContextCopyText() {
+		if (!contextMenuMessage?.text) return;
+		try {
+			await navigator.clipboard.writeText(contextMenuMessage.text);
+		} catch {
+			// Ignore clipboard failures caused by browser permissions.
+		}
+		closeMessageContextMenu();
+	}
+
+	async function handleContextCopyId() {
+		if (!contextMenuMessage) return;
+		try {
+			await navigator.clipboard.writeText(contextMenuMessage.id);
+		} catch {
+			// Ignore clipboard failures caused by browser permissions.
+		}
+		closeMessageContextMenu();
 	}
 
 	function handleComposerSend() {
@@ -200,6 +289,7 @@
 		});
 		composerText = '';
 		replyTargetId = null;
+		messageContextMenu = null;
 	}
 
 	function handleComposerKeyDown(event: KeyboardEvent) {
@@ -209,6 +299,8 @@
 		}
 	}
 </script>
+
+<svelte:window onclick={handleGlobalPointerDown} onkeydown={handleGlobalKeyDown} />
 
 <div class="relative">
 	<!-- iPhone Frame -->
@@ -318,7 +410,12 @@
 											<div
 												class="flex items-start gap-3 rounded transition-colors {canCompose ? 'cursor-pointer hover:bg-white/5' : 'hover:bg-white/5'} {replyTargetId === message.id ? 'ring-1 ring-primary/40 bg-white/5' : ''}"
 												style="padding: {messagePadding / 4}px {messagePadding / 2}px;"
+												role="button"
+												tabindex={canCompose ? 0 : -1}
+												aria-pressed={canCompose ? replyTargetId === message.id : undefined}
 												onclick={() => toggleReplyTarget(message.id)}
+												onkeydown={(event) => handleMessageRowKeyDown(event, message.id)}
+												oncontextmenu={(event) => openMessageContextMenu(event, message.id)}
 											>
 												{#if showAvatars}
 													<Avatar class="w-10 h-10 flex-shrink-0 mt-0.5" style="border-radius: 50%; overflow: hidden;">
@@ -399,7 +496,12 @@
 											<div
 												class="flex items-start gap-3 rounded transition-colors group {canCompose ? 'cursor-pointer hover:bg-white/5' : 'hover:bg-white/5'} {replyTargetId === message.id ? 'ring-1 ring-primary/40 bg-white/5' : ''}"
 												style="padding: {messagePadding / 4}px {messagePadding / 2}px;"
+												role="button"
+												tabindex={canCompose ? 0 : -1}
+												aria-pressed={canCompose ? replyTargetId === message.id : undefined}
 												onclick={() => toggleReplyTarget(message.id)}
+												onkeydown={(event) => handleMessageRowKeyDown(event, message.id)}
+												oncontextmenu={(event) => openMessageContextMenu(event, message.id)}
 											>
 												{#if showAvatars && showTimestamps}
 													<div class="w-10 flex-shrink-0 flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity">
@@ -511,15 +613,31 @@
 									class="flex items-center gap-1.5 rounded-xl px-2 py-1.5"
 									style="background-color: {adaptedColors().input}"
 								>
-									<select
+									<Select
+										type="single"
 										bind:value={selectedSpeakerId}
-										class="max-w-[6.5rem] truncate rounded-md border border-transparent bg-transparent px-1 py-1 text-[11px] font-semibold outline-none"
-										style="color: {adaptedColors().text}"
+										items={speakerOptions}
+										onValueChange={(value) => (selectedSpeakerId = value)}
 									>
-										{#each characters as character (character.id)}
-											<option value={character.id}>{character.username}</option>
-										{/each}
-									</select>
+										<SelectTrigger
+											class="h-7 min-w-[6.8rem] max-w-[7.4rem] border-0 bg-transparent px-1.5 py-1 text-[11px] font-semibold shadow-none focus-visible:ring-0"
+										>
+											<span
+												data-slot="select-value"
+												class="truncate"
+												style="color: {adaptedColors().text}"
+											>
+												{characterMap.get(selectedSpeakerId)?.username ?? 'Speaker'}
+											</span>
+										</SelectTrigger>
+										<SelectContent>
+											{#each characters as character (character.id)}
+												<SelectItem value={character.id} label={character.username}>
+													{character.username}
+												</SelectItem>
+											{/each}
+										</SelectContent>
+									</Select>
 									<input
 										bind:value={composerText}
 										class="min-w-0 flex-1 bg-transparent px-1 py-1 text-sm outline-none"
@@ -585,4 +703,37 @@
 		<!-- Home Indicator -->
 		<div class="absolute bottom-2 left-1/2 transform -translate-x-1/2 w-32 h-1 bg-background rounded-full"></div>
 	</div>
+
+	{#if canCompose && messageContextMenu && contextMenuMessage}
+		<div
+			data-message-context-menu
+			class="fixed z-[120] w-[11.75rem] rounded-md border border-border bg-card p-1 shadow-lg"
+			role="menu"
+			tabindex="-1"
+			style="left: {messageContextMenu.x}px; top: {messageContextMenu.y}px;"
+			oncontextmenu={(event) => event.preventDefault()}
+		>
+			<button
+				type="button"
+				class="w-full rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+				onclick={handleContextReplyToggle}
+			>
+				{replyTargetId === contextMenuMessage.id ? 'Remove reply target' : 'Reply to this message'}
+			</button>
+			<button
+				type="button"
+				class="w-full rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+				onclick={handleContextCopyText}
+			>
+				Copy message text
+			</button>
+			<button
+				type="button"
+				class="w-full rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+				onclick={handleContextCopyId}
+			>
+				Copy message ID
+			</button>
+		</div>
+	{/if}
 </div>
