@@ -4,7 +4,8 @@
 		Message,
 		Connection,
 		CustomizationSettings,
-		CodecSetting
+		CodecSetting,
+		ChatPlatformSetting
 	} from '$lib/types';
 	import type { ExportProgress } from '$lib/utils/videoExport';
 	import { Button } from '$lib/components/ui/button';
@@ -21,17 +22,14 @@
 		AccordionTrigger
 	} from '$lib/components/ui/accordion';
 	import {
-		Type,
-		Layout,
-		Film,
 		Clock,
-		Palette,
+		Layers,
+		Film,
 		Play,
 		Pause,
 		Music2,
 		Download,
-		X,
-		Loader2
+		X
 	} from 'lucide-svelte/icons';
 	import { buildMessageAnimationTimeline } from '$lib/utils/animationTimeline';
 
@@ -78,16 +76,7 @@
 	}: Props = $props();
 
 	let channelName = $state(customizeSettings.channelName);
-	let backgroundColor = $state(customizeSettings.backgroundColor);
-	let textColor = $state(customizeSettings.textColor);
-	let primaryColor = $state(customizeSettings.primaryColor);
-	let fontFamily = $state(customizeSettings.fontFamily);
-	let fontSize = $state(customizeSettings.fontSize);
-	let fontWeight = $state(customizeSettings.fontWeight);
-	let messageSpacing = $state(customizeSettings.messageSpacing);
-	let messagePadding = $state(customizeSettings.messagePadding);
-	let showAvatars = $state(customizeSettings.showAvatars);
-	let showTimestamps = $state(customizeSettings.showTimestamps);
+	let chatPlatform = $state<ChatPlatformSetting>(customizeSettings.chatPlatform ?? 'discord');
 	let resolution = $state(customizeSettings.resolution);
 	let fps = $state(customizeSettings.fps);
 	let quality = $state(customizeSettings.quality);
@@ -102,48 +91,95 @@
 	let codec = $state(customizeSettings.codec);
 	let enableCompression = $state(customizeSettings.enableCompression);
 
-	$effect(() => {
-		channelName = customizeSettings.channelName;
-		backgroundColor = customizeSettings.backgroundColor;
-		textColor = customizeSettings.textColor;
-		primaryColor = customizeSettings.primaryColor;
-		fontFamily = customizeSettings.fontFamily;
-		fontSize = customizeSettings.fontSize;
-		fontWeight = customizeSettings.fontWeight;
-		messageSpacing = customizeSettings.messageSpacing;
-		messagePadding = customizeSettings.messagePadding;
-		showAvatars = customizeSettings.showAvatars;
-		showTimestamps = customizeSettings.showTimestamps;
-		resolution = customizeSettings.resolution;
-		fps = customizeSettings.fps;
-		quality = customizeSettings.quality;
-		messageDuration = customizeSettings.messageDuration;
-		transitionDuration = customizeSettings.transitionDuration;
-		animationSpeed = customizeSettings.animationSpeed;
-		enableTransitions = customizeSettings.enableTransitions;
-		musicEnabled = customizeSettings.musicEnabled;
-		musicVolume = customizeSettings.musicVolume;
-		notificationSoundEnabled = customizeSettings.notificationSoundEnabled;
-		exportFormat = customizeSettings.exportFormat;
-		codec = customizeSettings.codec;
-		enableCompression = customizeSettings.enableCompression;
-	});
-
-	const fontFamilyOptions: SelectOption[] = [
-		{ value: 'Instrument Sans', label: 'Instrument Sans' },
-		{ value: 'Bricolage Grotesque', label: 'Bricolage Grotesque' },
-		{ value: 'Manrope', label: 'Manrope' },
-		{ value: 'Archivo', label: 'Archivo' },
-		{ value: 'JetBrains Mono', label: 'JetBrains Mono' }
+	const templateOptions: Array<{
+		value: ChatPlatformSetting;
+		label: string;
+		description: string;
+		gradient: string;
+	}> = [
+		{
+			value: 'discord',
+			label: 'Discord',
+			description: 'Compact gamer-style channel feed',
+			gradient: 'linear-gradient(135deg, #5865f2, #4f46e5)'
+		},
+		{
+			value: 'whatsapp',
+			label: 'WhatsApp',
+			description: 'Conversational mobile chat style',
+			gradient: 'linear-gradient(135deg, #25d366, #128c7e)'
+		},
+		{
+			value: 'messenger',
+			label: 'Messenger',
+			description: 'Rounded social chat bubbles',
+			gradient: 'linear-gradient(135deg, #00b2ff, #006aff)'
+		},
+		{
+			value: 'telegram',
+			label: 'Telegram',
+			description: 'Clean channel timeline',
+			gradient: 'linear-gradient(135deg, #2aabee, #229ed9)'
+		}
 	];
 
-	const fontWeightOptions: SelectOption[] = [
-		{ value: 'light', label: 'Light (300)' },
-		{ value: 'normal', label: 'Normal (400)' },
-		{ value: 'medium', label: 'Medium (500)' },
-		{ value: 'semibold', label: 'Semibold (600)' },
-		{ value: 'bold', label: 'Bold (700)' }
-	];
+	const templateDefaults: Record<ChatPlatformSetting, string> = {
+		discord: 'announcements',
+		whatsapp: 'Team Chat',
+		messenger: 'Inbox',
+		telegram: 'Updates'
+	};
+
+	const templatePresets: Record<ChatPlatformSetting, Partial<CustomizationSettings>> = {
+		discord: {
+			backgroundColor: '#1f2933',
+			textColor: '#f4f6f8',
+			primaryColor: '#5865f2',
+			fontFamily: 'Instrument Sans',
+			fontSize: 16,
+			fontWeight: 'normal',
+			messageSpacing: 12,
+			messagePadding: 16,
+			showAvatars: true,
+			showTimestamps: true
+		},
+		whatsapp: {
+			backgroundColor: '#efeae2',
+			textColor: '#111b21',
+			primaryColor: '#25d366',
+			fontFamily: 'Manrope',
+			fontSize: 15,
+			fontWeight: 'normal',
+			messageSpacing: 10,
+			messagePadding: 14,
+			showAvatars: false,
+			showTimestamps: true
+		},
+		messenger: {
+			backgroundColor: '#f5f7fb',
+			textColor: '#111827',
+			primaryColor: '#0084ff',
+			fontFamily: 'Manrope',
+			fontSize: 15,
+			fontWeight: 'normal',
+			messageSpacing: 10,
+			messagePadding: 14,
+			showAvatars: true,
+			showTimestamps: false
+		},
+		telegram: {
+			backgroundColor: '#e8eef7',
+			textColor: '#17212b',
+			primaryColor: '#2aabee',
+			fontFamily: 'Archivo',
+			fontSize: 15,
+			fontWeight: 'normal',
+			messageSpacing: 11,
+			messagePadding: 14,
+			showAvatars: true,
+			showTimestamps: true
+		}
+	};
 
 	const resolutionOptions: SelectOption[] = [
 		{ value: 'vertical-1080x1920', label: 'Vertical (1080x1920)' }
@@ -167,13 +203,9 @@
 		{ value: 'vp9', label: 'VP9' }
 	];
 
-	const getOptionLabel = (options: SelectOption[], value: string, placeholder: string) => {
-		const match = options.find((option) => option.value === value);
-		return match ? match.label : placeholder;
-	};
-
-	const selectTriggerTextClass = (hasValue: boolean) =>
-		hasValue ? 'line-clamp-1' : 'line-clamp-1 text-muted-foreground';
+	const activeTemplate = $derived(
+		templateOptions.find((template) => template.value === chatPlatform) ?? templateOptions[0]
+	);
 
 	const estimatedVideoLength = $derived.by(() => {
 		return buildMessageAnimationTimeline(messages, connections, {
@@ -183,36 +215,53 @@
 		}).totalDuration;
 	});
 
-	function handleApplySettings(overrides: Partial<CustomizationSettings> = {}) {
+	$effect(() => {
+		channelName = customizeSettings.channelName;
+		chatPlatform = customizeSettings.chatPlatform ?? 'discord';
+		resolution = customizeSettings.resolution;
+		fps = customizeSettings.fps;
+		quality = customizeSettings.quality;
+		messageDuration = customizeSettings.messageDuration;
+		transitionDuration = customizeSettings.transitionDuration;
+		animationSpeed = customizeSettings.animationSpeed;
+		enableTransitions = customizeSettings.enableTransitions;
+		musicEnabled = customizeSettings.musicEnabled;
+		musicVolume = customizeSettings.musicVolume;
+		notificationSoundEnabled = customizeSettings.notificationSoundEnabled;
+		exportFormat = customizeSettings.exportFormat;
+		codec = customizeSettings.codec;
+		enableCompression = customizeSettings.enableCompression;
+	});
+
+	const getOptionLabel = (options: SelectOption[], value: string, placeholder: string) => {
+		const match = options.find((option) => option.value === value);
+		return match ? match.label : placeholder;
+	};
+
+	const selectTriggerTextClass = (hasValue: boolean) =>
+		hasValue ? 'line-clamp-1' : 'line-clamp-1 text-muted-foreground';
+
+	function applyTemplate(platform: ChatPlatformSetting) {
+		chatPlatform = platform;
+		const normalizedChannelName = channelName.trim() || templateDefaults[platform];
+		channelName = normalizedChannelName;
 		onCustomizationApply({
-			channelName,
-			backgroundColor,
-			textColor,
-			primaryColor,
+			chatPlatform: platform,
+			channelName: normalizedChannelName,
 			backgroundImage: '',
 			backgroundTheme: 'none',
-			fontFamily,
-			fontSize,
-			fontWeight,
-			messageSpacing,
-			messagePadding,
-			showAvatars,
-			showTimestamps,
-			resolution,
-			fps,
-			quality,
-			messageDuration,
-			transitionDuration,
-			animationSpeed,
-			enableTransitions,
-			musicEnabled,
-			musicVolume,
-			notificationSoundEnabled,
-			exportFormat,
-			codec: codec as CodecSetting,
-			enableCompression,
-			...overrides
+			...templatePresets[platform]
 		});
+	}
+
+	function applyChannelName() {
+		const normalizedChannelName = channelName.trim() || templateDefaults[chatPlatform];
+		channelName = normalizedChannelName;
+		onCustomizationApply({ channelName: normalizedChannelName });
+	}
+
+	function handleApplySettings(overrides: Partial<CustomizationSettings>) {
+		onCustomizationApply({ ...overrides });
 	}
 </script>
 
@@ -221,26 +270,13 @@
 		<div class="mb-2 flex items-center gap-3">
 			<div
 				class="flex h-10 w-10 items-center justify-center rounded-xl shadow-lg"
-				style="background: linear-gradient(135deg, {primaryColor}, #14b8a6);"
+				style="background: {activeTemplate.gradient};"
 			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					class="h-6 w-6 text-white"
-					fill="none"
-					viewBox="0 0 24 24"
-					stroke="currentColor"
-				>
-					<path
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						stroke-width="2"
-						d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-					/>
-				</svg>
+				<Layers class="h-5 w-5 text-white" />
 			</div>
 			<div>
-				<h2 class="text-lg font-bold">Studio Controls</h2>
-				<p class="text-xs text-muted-foreground">Dial in style, pacing, and export quality</p>
+				<h2 class="text-lg font-bold">Template Controls</h2>
+				<p class="text-xs text-muted-foreground">Switch between chat app templates and export</p>
 			</div>
 		</div>
 	</div>
@@ -249,246 +285,46 @@
 		<div class="p-6 pb-8">
 			<Accordion
 				type="multiple"
-				value={['appearance', 'typography', 'layout', 'timing', 'audio', 'video']}
+				value={['templates', 'timing', 'audio', 'video']}
 				class="w-full space-y-2"
 			>
-				<AccordionItem value="appearance">
+				<AccordionItem value="templates">
 					<AccordionTrigger>
 						<div class="flex items-center gap-2">
-							<Palette class="size-4" />
-							<span>Appearance</span>
+							<Layers class="size-4" />
+							<span>Chat Templates</span>
 						</div>
 					</AccordionTrigger>
 					<AccordionContent>
 						<div class="space-y-4 pt-2">
 							<div>
-								<Label for="channel-name" class="text-sm">Channel Name</Label>
+								<Label for="channel-name" class="text-sm">Chat Title</Label>
 								<Input
 									id="channel-name"
 									bind:value={channelName}
 									class="mt-1.5"
-									onblur={() => handleApplySettings({ channelName })}
-									placeholder="general"
-								/>
-								<p class="mt-1 text-xs text-muted-foreground">Appears in the chat header</p>
-							</div>
-
-							<div class="grid grid-cols-3 gap-2">
-								<div class="col-span-1">
-									<Label for="background-color" class="text-sm">Surface</Label>
-									<Input
-										id="background-color"
-										type="color"
-										bind:value={backgroundColor}
-										class="mt-1.5 h-10 p-1"
-										onchange={() => handleApplySettings({ backgroundColor })}
-									/>
-								</div>
-								<div class="col-span-2">
-									<Label for="background-color-text" class="text-sm">Hex</Label>
-									<Input
-										id="background-color-text"
-										bind:value={backgroundColor}
-										class="mt-1.5"
-										onblur={() => handleApplySettings({ backgroundColor })}
-										placeholder="#1f2933"
-									/>
-								</div>
-							</div>
-
-							<div class="grid grid-cols-3 gap-2">
-								<div class="col-span-1">
-									<Label for="text-color" class="text-sm">Text</Label>
-									<Input
-										id="text-color"
-										type="color"
-										bind:value={textColor}
-										class="mt-1.5 h-10 p-1"
-										onchange={() => handleApplySettings({ textColor })}
-									/>
-								</div>
-								<div class="col-span-2">
-									<Label for="text-color-text" class="text-sm">Hex</Label>
-									<Input
-										id="text-color-text"
-										bind:value={textColor}
-										class="mt-1.5"
-										onblur={() => handleApplySettings({ textColor })}
-										placeholder="#f4f6f8"
-									/>
-								</div>
-							</div>
-
-							<div class="grid grid-cols-3 gap-2">
-								<div class="col-span-1">
-									<Label for="primary-color" class="text-sm">Accent</Label>
-									<Input
-										id="primary-color"
-										type="color"
-										bind:value={primaryColor}
-										class="mt-1.5 h-10 p-1"
-										onchange={() => handleApplySettings({ primaryColor })}
-									/>
-								</div>
-								<div class="col-span-2">
-									<Label for="primary-color-text" class="text-sm">Hex</Label>
-									<Input
-										id="primary-color-text"
-										bind:value={primaryColor}
-										class="mt-1.5"
-										onblur={() => handleApplySettings({ primaryColor })}
-										placeholder="#ff6f3b"
-									/>
-								</div>
-							</div>
-						</div>
-					</AccordionContent>
-				</AccordionItem>
-
-				<AccordionItem value="typography">
-					<AccordionTrigger>
-						<div class="flex items-center gap-2">
-							<Type class="size-4" />
-							<span>Typography</span>
-						</div>
-					</AccordionTrigger>
-					<AccordionContent>
-						<div class="space-y-4 pt-2">
-							<div>
-								<Label for="font-family" class="text-sm">Font Family</Label>
-								<Select
-									type="single"
-									bind:value={fontFamily}
-									items={fontFamilyOptions}
-									onValueChange={(value) => {
-										fontFamily = value;
-										handleApplySettings({ fontFamily: value });
-									}}
-								>
-									<SelectTrigger id="font-family" class="mt-1.5">
-										<span data-slot="select-value" class={selectTriggerTextClass(Boolean(fontFamily))}>
-											{getOptionLabel(fontFamilyOptions, fontFamily, 'Select font')}
-										</span>
-									</SelectTrigger>
-									<SelectContent>
-										{#each fontFamilyOptions as option}
-											<SelectItem value={option.value} label={option.label}>{option.label}</SelectItem>
-										{/each}
-									</SelectContent>
-								</Select>
-							</div>
-
-							<div>
-								<Label for="font-size" class="text-sm">Font Size: {fontSize}px</Label>
-								<Slider
-									id="font-size"
-									type="single"
-									bind:value={fontSize}
-									min={12}
-									max={24}
-									step={1}
-									class="mt-2"
-									onValueChange={(value) => {
-										fontSize = value;
-										handleApplySettings({ fontSize: value });
-									}}
+									onblur={applyChannelName}
+									placeholder={templateDefaults[chatPlatform]}
 								/>
 							</div>
 
-							<div>
-								<Label for="font-weight" class="text-sm">Font Weight</Label>
-								<Select
-									type="single"
-									bind:value={fontWeight}
-									items={fontWeightOptions}
-									onValueChange={(value) => {
-										fontWeight = value as CustomizationSettings['fontWeight'];
-										handleApplySettings({
-											fontWeight: value as CustomizationSettings['fontWeight']
-										});
-									}}
-								>
-									<SelectTrigger id="font-weight" class="mt-1.5">
-										<span data-slot="select-value" class={selectTriggerTextClass(Boolean(fontWeight))}>
-											{getOptionLabel(fontWeightOptions, fontWeight, 'Select weight')}
-										</span>
-									</SelectTrigger>
-									<SelectContent>
-										{#each fontWeightOptions as option}
-											<SelectItem value={option.value} label={option.label}>{option.label}</SelectItem>
-										{/each}
-									</SelectContent>
-								</Select>
-							</div>
-						</div>
-					</AccordionContent>
-				</AccordionItem>
-
-				<AccordionItem value="layout">
-					<AccordionTrigger>
-						<div class="flex items-center gap-2">
-							<Layout class="size-4" />
-							<span>Layout</span>
-						</div>
-					</AccordionTrigger>
-					<AccordionContent>
-						<div class="space-y-4 pt-2">
-							<div>
-								<Label for="message-spacing" class="text-sm">Message Spacing: {messageSpacing}px</Label>
-								<Slider
-									id="message-spacing"
-									type="single"
-									bind:value={messageSpacing}
-									min={4}
-									max={32}
-									step={1}
-									class="mt-2"
-									onValueChange={(value) => {
-										messageSpacing = value;
-										handleApplySettings({ messageSpacing: value });
-									}}
-								/>
-							</div>
-
-							<div>
-								<Label for="message-padding" class="text-sm">Message Padding: {messagePadding}px</Label>
-								<Slider
-									id="message-padding"
-									type="single"
-									bind:value={messagePadding}
-									min={4}
-									max={32}
-									step={1}
-									class="mt-2"
-									onValueChange={(value) => {
-										messagePadding = value;
-										handleApplySettings({ messagePadding: value });
-									}}
-								/>
-							</div>
-
-							<div class="flex items-center justify-between">
-								<Label for="show-avatars" class="text-sm">Show Avatars</Label>
-								<Switch
-									id="show-avatars"
-									bind:checked={showAvatars}
-									onCheckedChange={(checked) => {
-										showAvatars = checked;
-										handleApplySettings({ showAvatars: checked });
-									}}
-								/>
-							</div>
-
-							<div class="flex items-center justify-between">
-								<Label for="show-timestamps" class="text-sm">Show Timestamps</Label>
-								<Switch
-									id="show-timestamps"
-									bind:checked={showTimestamps}
-									onCheckedChange={(checked) => {
-										showTimestamps = checked;
-										handleApplySettings({ showTimestamps: checked });
-									}}
-								/>
+							<div class="grid grid-cols-1 gap-2">
+								{#each templateOptions as template}
+									<button
+										type="button"
+										class="rounded-lg border p-3 text-left transition-all hover:border-primary/60 {chatPlatform === template.value ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-border bg-muted/20'}"
+										onclick={() => applyTemplate(template.value)}
+									>
+										<div class="mb-2 h-2.5 w-full rounded-full" style="background: {template.gradient};"></div>
+										<div class="flex items-center justify-between gap-2">
+											<p class="text-sm font-semibold">{template.label}</p>
+											{#if chatPlatform === template.value}
+												<span class="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">Active</span>
+											{/if}
+										</div>
+										<p class="mt-1 text-xs text-muted-foreground">{template.description}</p>
+									</button>
+								{/each}
 							</div>
 						</div>
 					</AccordionContent>
@@ -504,9 +340,7 @@
 					<AccordionContent>
 						<div class="space-y-4 pt-2">
 							<div>
-								<Label for="message-duration" class="text-sm"
-									>Message Duration: {messageDuration.toFixed(1)}s</Label
-								>
+								<Label for="message-duration" class="text-sm">Message Duration: {messageDuration.toFixed(1)}s</Label>
 								<Slider
 									id="message-duration"
 									type="single"
@@ -523,9 +357,7 @@
 							</div>
 
 							<div>
-								<Label for="transition-duration" class="text-sm"
-									>Transition Duration: {transitionDuration.toFixed(2)}s</Label
-								>
+								<Label for="transition-duration" class="text-sm">Transition Duration: {transitionDuration.toFixed(2)}s</Label>
 								<Slider
 									id="transition-duration"
 									type="single"
@@ -542,9 +374,7 @@
 							</div>
 
 							<div>
-								<Label for="animation-speed" class="text-sm"
-									>Animation Speed: {animationSpeed.toFixed(1)}x</Label
-								>
+								<Label for="animation-speed" class="text-sm">Animation Speed: {animationSpeed.toFixed(1)}x</Label>
 								<Slider
 									id="animation-speed"
 									type="single"
@@ -605,7 +435,7 @@
 										}
 									}}
 								/>
-								<p class="mt-1 text-xs text-muted-foreground line-clamp-1">{musicTrackName}</p>
+								<p class="mt-1 line-clamp-1 text-xs text-muted-foreground">{musicTrackName}</p>
 							</div>
 
 							<div class="flex items-center gap-2">
@@ -656,9 +486,7 @@
 							</div>
 
 							<div class="flex items-center justify-between">
-								<Label for="notification-sound-enabled" class="text-sm"
-									>Enable Notification Sound</Label
-								>
+								<Label for="notification-sound-enabled" class="text-sm">Enable Notification Sound</Label>
 								<Switch
 									id="notification-sound-enabled"
 									bind:checked={notificationSoundEnabled}
@@ -668,9 +496,9 @@
 									}}
 								/>
 							</div>
-							</div>
-						</AccordionContent>
-					</AccordionItem>
+						</div>
+					</AccordionContent>
+				</AccordionItem>
 
 				<AccordionItem value="video">
 					<AccordionTrigger>
@@ -689,9 +517,7 @@
 									items={resolutionOptions}
 									onValueChange={(value) => {
 										resolution = value as CustomizationSettings['resolution'];
-										handleApplySettings({
-											resolution: value as CustomizationSettings['resolution']
-										});
+										handleApplySettings({ resolution: value as CustomizationSettings['resolution'] });
 									}}
 								>
 									<SelectTrigger id="resolution" class="mt-1.5">
@@ -723,7 +549,6 @@
 										handleApplySettings({ fps: nextFps });
 									}}
 								/>
-								<p class="mt-1 text-xs text-muted-foreground">24-60 FPS export frame rate</p>
 							</div>
 
 							<div>
@@ -734,16 +559,11 @@
 									items={exportFormatOptions}
 									onValueChange={(value) => {
 										exportFormat = value as CustomizationSettings['exportFormat'];
-										handleApplySettings({
-											exportFormat: value as CustomizationSettings['exportFormat']
-										});
+										handleApplySettings({ exportFormat: value as CustomizationSettings['exportFormat'] });
 									}}
 								>
 									<SelectTrigger id="export-format" class="mt-1.5">
-										<span
-											data-slot="select-value"
-											class={selectTriggerTextClass(Boolean(exportFormat))}
-										>
+										<span data-slot="select-value" class={selectTriggerTextClass(Boolean(exportFormat))}>
 											{getOptionLabel(exportFormatOptions, exportFormat, 'Select format')}
 										</span>
 									</SelectTrigger>
@@ -763,9 +583,7 @@
 									items={qualityOptions}
 									onValueChange={(value) => {
 										quality = value as CustomizationSettings['quality'];
-										handleApplySettings({
-											quality: value as CustomizationSettings['quality']
-										});
+										handleApplySettings({ quality: value as CustomizationSettings['quality'] });
 									}}
 								>
 									<SelectTrigger id="quality" class="mt-1.5">
@@ -789,9 +607,7 @@
 									items={codecOptions}
 									onValueChange={(value) => {
 										codec = value as CustomizationSettings['codec'];
-										handleApplySettings({
-											codec: value as CustomizationSettings['codec']
-										});
+										handleApplySettings({ codec: value as CustomizationSettings['codec'] });
 									}}
 								>
 									<SelectTrigger id="codec" class="mt-1.5">
@@ -856,7 +672,7 @@
 						</span>
 						<span class="font-semibold">{exportProgress.percent}%</span>
 					</div>
-					
+
 					<div class="h-2 w-full overflow-hidden rounded-full bg-secondary">
 						<div
 							class="h-full bg-gradient-to-r from-orange-500 to-teal-500 transition-all duration-300"
@@ -865,12 +681,7 @@
 					</div>
 
 					{#if exportProgress.phase !== 'complete'}
-						<Button
-							variant="outline"
-							class="w-full"
-							onclick={() => onCancelExport?.()}
-							size="sm"
-						>
+						<Button variant="outline" class="w-full" onclick={() => onCancelExport?.()} size="sm">
 							<X class="mr-2 size-4" />
 							Cancel Export
 						</Button>

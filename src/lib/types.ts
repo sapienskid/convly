@@ -41,9 +41,11 @@ export type ResolutionSetting = 'vertical-1080x1920';
 export type QualitySetting = 'low' | 'medium' | 'high' | 'ultra';
 export type ExportFormatSetting = 'mp4' | 'webm';
 export type CodecSetting = 'h264' | 'h265' | 'vp9';
+export type ChatPlatformSetting = 'discord' | 'whatsapp' | 'messenger' | 'telegram';
 
 export interface CustomizationSettings {
 	channelName: string;
+	chatPlatform: ChatPlatformSetting;
 	backgroundColor: string;
 	backgroundImage: string;
 	backgroundTheme: BackgroundThemeSetting;
@@ -73,6 +75,7 @@ export interface CustomizationSettings {
 
 export const defaultCustomizationSettings: CustomizationSettings = {
 	channelName: 'announcements',
+	chatPlatform: 'discord',
 	backgroundColor: '#1f2933',
 	backgroundImage: '',
 	backgroundTheme: 'none',
