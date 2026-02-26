@@ -17,6 +17,12 @@
 		isGenerating?: boolean;
 		customizeSettings?: Partial<CustomizationSettings>;
 		currentTime?: number;
+		interactive?: boolean;
+		onSendMessage?: (payload: {
+			text: string;
+			characterId?: string | null;
+			replyTo?: string | null;
+		}) => void;
 	}
 
 	let {
@@ -25,10 +31,15 @@
 		connections,
 		previewState,
 		customizeSettings = {},
-		currentTime = 0
+		currentTime = 0,
+		interactive = false,
+		onSendMessage
 	}: Props = $props();
 
 	let messagesViewport = $state<HTMLDivElement | null>(null);
+	let composerText = $state('');
+	let selectedSpeakerId = $state('');
+	let replyTargetId = $state<string | null>(null);
 
 	const messageFlowInfo = $derived(analyzeMessageFlow(messages, connections));
 	const orderedPreviewMessages = $derived(messageFlowInfo.map((info) => info.message));
@@ -71,6 +82,10 @@
 		typingIndicatorCharacterId
 			? (characterMap.get(typingIndicatorCharacterId) ?? null)
 			: null
+	);
+	const canCompose = $derived(interactive && previewState === 'preview');
+	const replyTargetMessage = $derived(
+		replyTargetId ? messageMap.get(replyTargetId) ?? null : null
 	);
 
 	const backgroundColor = $derived(customizeSettings.backgroundColor || '#1f2933');
@@ -156,6 +171,43 @@
 
 		messagesViewport.scrollTop = messagesViewport.scrollTop + delta * 0.22;
 	});
+
+	$effect(() => {
+		if (!selectedSpeakerId || !characterMap.has(selectedSpeakerId)) {
+			selectedSpeakerId = characters[0]?.id ?? '';
+		}
+	});
+
+	$effect(() => {
+		if (replyTargetId && !messageMap.has(replyTargetId)) {
+			replyTargetId = null;
+		}
+	});
+
+	function toggleReplyTarget(messageId: string) {
+		if (!canCompose) return;
+		replyTargetId = replyTargetId === messageId ? null : messageId;
+	}
+
+	function handleComposerSend() {
+		const text = composerText.trim();
+		if (!text || !selectedSpeakerId || !onSendMessage) return;
+
+		onSendMessage({
+			text,
+			characterId: selectedSpeakerId,
+			replyTo: replyTargetId
+		});
+		composerText = '';
+		replyTargetId = null;
+	}
+
+	function handleComposerKeyDown(event: KeyboardEvent) {
+		if (event.key === 'Enter' && !event.shiftKey) {
+			event.preventDefault();
+			handleComposerSend();
+		}
+	}
 </script>
 
 <div class="relative">
@@ -263,7 +315,11 @@
 										{@const replyPreview = replyText.length > 90 ? `${replyText.slice(0, 87)}...` : replyText}
 
 										{#if !isGrouped}
-											<div class="flex items-start gap-3 hover:bg-white/5 rounded transition-colors" style="padding: {messagePadding / 4}px {messagePadding / 2}px;">
+											<div
+												class="flex items-start gap-3 rounded transition-colors {canCompose ? 'cursor-pointer hover:bg-white/5' : 'hover:bg-white/5'} {replyTargetId === message.id ? 'ring-1 ring-primary/40 bg-white/5' : ''}"
+												style="padding: {messagePadding / 4}px {messagePadding / 2}px;"
+												onclick={() => toggleReplyTarget(message.id)}
+											>
 												{#if showAvatars}
 													<Avatar class="w-10 h-10 flex-shrink-0 mt-0.5" style="border-radius: 50%; overflow: hidden;">
 														<AvatarImage src={displayCharacter.avatar} alt={displayCharacter.username} style="border-radius: 50%; width: 100%; height: 100%; object-fit: cover;" />
@@ -340,7 +396,11 @@
 												</div>
 											</div>
 										{:else}
-											<div class="flex items-start gap-3 hover:bg-white/5 rounded transition-colors group" style="padding: {messagePadding / 4}px {messagePadding / 2}px;">
+											<div
+												class="flex items-start gap-3 rounded transition-colors group {canCompose ? 'cursor-pointer hover:bg-white/5' : 'hover:bg-white/5'} {replyTargetId === message.id ? 'ring-1 ring-primary/40 bg-white/5' : ''}"
+												style="padding: {messagePadding / 4}px {messagePadding / 2}px;"
+												onclick={() => toggleReplyTarget(message.id)}
+											>
 												{#if showAvatars && showTimestamps}
 													<div class="w-10 flex-shrink-0 flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity">
 														<span class="text-[10px] font-medium" style="color: {textColor}40">
@@ -428,28 +488,79 @@
 							class="px-3 py-2 border-t flex-shrink-0 backdrop-blur-sm"
 							style="background-color: {adaptedColors().header}; border-top-color: {adaptedColors().headerBorder}"
 						>
-							<div
-								class="flex items-center gap-2 rounded-full px-3 py-2"
-								style="background-color: {adaptedColors().input}"
-							>
-								<!-- Add Icon -->
-								<svg class="w-5 h-5 flex-shrink-0" style="color: {adaptedColors().textMuted}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-								</svg>
-								<!-- Input Placeholder -->
-								<div class="flex-1 text-sm" style="color: {adaptedColors().textDim}">
-									Message #{channelName}
+							{#if canCompose}
+								{#if replyTargetMessage}
+									<div
+										class="mb-2 flex items-center justify-between rounded-lg border px-2 py-1.5 text-xs"
+										style="border-color: {adaptedColors().headerBorder}; background-color: {adaptedColors().input}"
+									>
+										<div class="truncate" style="color: {adaptedColors().text}">
+											Replying to {characterMap.get(replyTargetMessage.characterId ?? '')?.username ?? 'Unknown'}
+										</div>
+										<button
+											class="ml-2 shrink-0 rounded px-1 text-xs font-semibold"
+											style="color: {adaptedColors().textMuted}"
+											onclick={() => (replyTargetId = null)}
+											type="button"
+										>
+											X
+										</button>
+									</div>
+								{/if}
+								<div
+									class="flex items-center gap-1.5 rounded-xl px-2 py-1.5"
+									style="background-color: {adaptedColors().input}"
+								>
+									<select
+										bind:value={selectedSpeakerId}
+										class="max-w-[6.5rem] truncate rounded-md border border-transparent bg-transparent px-1 py-1 text-[11px] font-semibold outline-none"
+										style="color: {adaptedColors().text}"
+									>
+										{#each characters as character (character.id)}
+											<option value={character.id}>{character.username}</option>
+										{/each}
+									</select>
+									<input
+										bind:value={composerText}
+										class="min-w-0 flex-1 bg-transparent px-1 py-1 text-sm outline-none"
+										style="color: {adaptedColors().text}"
+										placeholder={`Message #${channelName}`}
+										onkeydown={handleComposerKeyDown}
+									/>
+									<button
+										type="button"
+										class="rounded-md px-2 py-1 text-[11px] font-semibold transition-opacity disabled:opacity-40"
+										style="background-color: {primaryColor}; color: #fff;"
+										onclick={handleComposerSend}
+										disabled={!composerText.trim() || !selectedSpeakerId}
+									>
+										Send
+									</button>
 								</div>
-								<!-- Emoji & More Icons -->
-								<div class="flex items-center gap-2">
-									<svg class="w-5 h-5" style="color: {adaptedColors().textMuted}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+							{:else}
+								<div
+									class="flex items-center gap-2 rounded-full px-3 py-2"
+									style="background-color: {adaptedColors().input}"
+								>
+									<!-- Add Icon -->
+									<svg class="w-5 h-5 flex-shrink-0" style="color: {adaptedColors().textMuted}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
 									</svg>
-									<svg class="w-5 h-5" style="color: {textColor}88" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/>
-									</svg>
+									<!-- Input Placeholder -->
+									<div class="flex-1 text-sm" style="color: {adaptedColors().textDim}">
+										Message #{channelName}
+									</div>
+									<!-- Emoji & More Icons -->
+									<div class="flex items-center gap-2">
+										<svg class="w-5 h-5" style="color: {adaptedColors().textMuted}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+										</svg>
+										<svg class="w-5 h-5" style="color: {textColor}88" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/>
+										</svg>
+									</div>
 								</div>
-							</div>
+							{/if}
 						</div>
 					</div>
 				{:else if previewState === 'loading'}

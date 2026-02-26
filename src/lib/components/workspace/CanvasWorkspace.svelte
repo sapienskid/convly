@@ -19,15 +19,7 @@
 	import CharacterFlowNode from '$lib/components/canvas/CharacterFlowNode.svelte';
 	import MessageFlowNode from '$lib/components/canvas/MessageFlowNode.svelte';
 	import FloatingEdge from '$lib/components/canvas/FloatingEdge.svelte';
-	import { 
-		addCharacterAtPosition, 
-		addMessageAtPosition, 
-		createConnection,
-		deleteConnection,
-		nodeConnectionModes
-	} from '$lib/stores/appStore';
-	import { Button } from '$lib/components/ui/button';
-	import { Trash2 } from 'lucide-svelte/icons';
+	import { createConnection, nodeConnectionModes } from '$lib/stores/appStore';
 	import { get } from 'svelte/store';
 
 	interface Props {
@@ -36,6 +28,7 @@
 		connections: Connection[];
 		selectedTool: Tool;
 		selectedElement: string | null;
+		readOnly?: boolean;
 		onCharacterMove: (id: string, position: { x: number; y: number }) => void;
 		onMessageMove: (id: string, position: { x: number; y: number }) => void;
 		onMessageTextUpdate: (id: string, text: string) => void;
@@ -51,6 +44,7 @@
 		connections,
 		selectedTool,
 		selectedElement,
+		readOnly = false,
 		onCharacterMove,
 		onMessageMove,
 		onMessageTextUpdate,
@@ -63,7 +57,6 @@
 	let selectedEdge = $state<string | null>(null);
 	let connectingFrom = $state<string | null>(null);
 	let connectStartNodeId = $state<string | null>(null);
-	let edgeButtonPosition = $state<{ x: number; y: number } | null>(null);
 	let viewport = $state<{ x: number; y: number; zoom: number } | undefined>(undefined);
 
 	// Convert characters to nodes
@@ -75,12 +68,13 @@
 			data: {
 				character: char,
 				isSelected: selectedElement === char.id,
+				readOnly,
 				onEdit: () => onCharacterEdit(char.id),
 				onAddMessage: () => onAddMessage(char.id),
 				onUsernameUpdate: onCharacterUsernameUpdate,
 				selectedTool
 			},
-			draggable: selectedTool === 'select'
+			draggable: !readOnly && selectedTool === 'select'
 		}))
 	);
 
@@ -102,10 +96,11 @@
 					replyToMessage,
 					replyCharacter,
 					isSelected: selectedElement === msg.id,
+					readOnly,
 					onTextUpdate: onMessageTextUpdate,
 					selectedTool
 				},
-				draggable: selectedTool === 'select'
+				draggable: !readOnly && selectedTool === 'select'
 			};
 		})
 	);
@@ -179,6 +174,7 @@
 	}
 
 	const validateConnection = (connection: { source?: string | null; target?: string | null }) => {
+		if (readOnly) return false;
 		const { source, target } = connection;
 		if (!source || !target) return false;
 
@@ -259,63 +255,112 @@
 	const handleNodeDrag: NodeTargetEventWithPointer<MouseEvent | TouchEvent, Node> = ({
 		targetNode
 	}) => {
+		if (readOnly) return;
 		if (!targetNode) return;
 		syncNodePosition(targetNode);
 	};
+
+	function getNodeBox(node: Node) {
+		const isCharacter = node.id.startsWith('char');
+		const width = isCharacter ? 260 : 360;
+		const height = isCharacter ? 170 : 300;
+		return {
+			left: node.position.x - width / 2,
+			right: node.position.x + width / 2,
+			top: node.position.y - height / 2,
+			bottom: node.position.y + height / 2,
+			width,
+			height
+		};
+	}
+
+	function resolveNodeCollisions(nodeId: string): void {
+		const currentNode = nodes.find((node) => node.id === nodeId);
+		if (!currentNode) return;
+
+		let x = currentNode.position.x;
+		let y = currentNode.position.y;
+		let iteration = 0;
+		const maxIterations = 14;
+		const buffer = 20;
+
+		while (iteration < maxIterations) {
+			let moved = false;
+			const candidateNode = { ...currentNode, position: { x, y } } as Node;
+			const candidateBox = getNodeBox(candidateNode);
+
+			for (const otherNode of nodes) {
+				if (otherNode.id === nodeId) continue;
+				const otherBox = getNodeBox(otherNode);
+
+				const overlapsHorizontally =
+					candidateBox.left < otherBox.right && candidateBox.right > otherBox.left;
+				const overlapsVertically =
+					candidateBox.top < otherBox.bottom && candidateBox.bottom > otherBox.top;
+				if (!overlapsHorizontally || !overlapsVertically) continue;
+
+				const overlapX =
+					Math.min(candidateBox.right, otherBox.right) -
+					Math.max(candidateBox.left, otherBox.left);
+				const overlapY =
+					Math.min(candidateBox.bottom, otherBox.bottom) -
+					Math.max(candidateBox.top, otherBox.top);
+
+				if (overlapX <= 0 || overlapY <= 0) continue;
+
+				if (overlapX < overlapY) {
+					x += (x >= otherNode.position.x ? 1 : -1) * (overlapX + buffer);
+				} else {
+					y += (y >= otherNode.position.y ? 1 : -1) * (overlapY + buffer);
+				}
+
+				moved = true;
+			}
+
+			if (!moved) break;
+			iteration += 1;
+		}
+
+		if (x !== currentNode.position.x || y !== currentNode.position.y) {
+			syncNodePosition({
+				...currentNode,
+				position: { x: Math.round(x), y: Math.round(y) }
+			});
+		}
+	}
 
 	// Handle node drag end
 	const handleNodeDragStop: NodeTargetEventWithPointer<MouseEvent | TouchEvent, Node> = ({
 		targetNode
 	}) => {
+		if (readOnly) return;
 		if (!targetNode) return;
 		syncNodePosition(targetNode);
+		resolveNodeCollisions(targetNode.id);
 	};
 
 	// Handle node click
-	const handleNodeClick: NodeEventWithPointer<MouseEvent | TouchEvent, Node> = ({ node, event }) => {
+	const handleNodeClick: NodeEventWithPointer<MouseEvent | TouchEvent, Node> = ({ node }) => {
 		onElementSelect(node.id);
 		selectedEdge = null;
 	};
 
 	// Handle pane click (deselect or add node)
-	const handlePaneClick: NonNullable<PaneEvents['onpaneclick']> = ({ event }) => {
-		if (selectedTool === 'character' || selectedTool === 'message') {
-			const paneElement = event.currentTarget;
-			if (!(paneElement instanceof HTMLElement)) return;
-			const rect = paneElement.getBoundingClientRect();
-			const currentViewport = viewport ?? { x: 0, y: 0, zoom: 1 };
-			// Translate screen coordinates into flow space so keyboard users can add nodes accurately
-			const flowPosition = {
-				x: (event.clientX - rect.left - currentViewport.x) / currentViewport.zoom,
-				y: (event.clientY - rect.top - currentViewport.y) / currentViewport.zoom
-			};
-
-			if (selectedTool === 'character') {
-				addCharacterAtPosition(flowPosition);
-			} else {
-				addMessageAtPosition(flowPosition);
-			}
-		} else {
-			onElementSelect(null);
-			selectedEdge = null;
-			connectingFrom = null;
-		}
+	const handlePaneClick: NonNullable<PaneEvents['onpaneclick']> = () => {
+		onElementSelect(null);
+		selectedEdge = null;
+		connectingFrom = null;
 	};
 
 	// Handle edge click
-	const handleEdgeClick = ({ edge, event }: { edge: Edge; event: MouseEvent }) => {
+	const handleEdgeClick = ({ edge }: { edge: Edge; event: MouseEvent }) => {
 		selectedEdge = edge.id;
 		onElementSelect(null);
-		
-		// Position delete button near the click
-		edgeButtonPosition = {
-			x: event.clientX,
-			y: event.clientY
-		};
 	};
 
 	// Handle connection
 	const handleConnect = (connection: FlowConnection) => {
+		if (readOnly) return;
 		if (!connection.source || !connection.target) return;
 
 		let source = connection.source;
@@ -336,21 +381,14 @@
 	};
 
 	const handleConnectStart: OnConnectStart = (_event, params) => {
+		if (readOnly) return;
 		connectStartNodeId = params.nodeId;
 	};
 
 	const handleConnectEnd: OnConnectEnd = () => {
+		if (readOnly) return;
 		connectStartNodeId = null;
 	};
-
-	// Handle delete edge button
-	function handleDeleteEdge() {
-		if (selectedEdge) {
-			deleteConnection(selectedEdge);
-			selectedEdge = null;
-			edgeButtonPosition = null;
-		}
-	}
 
 	// Handle escape to deselect edge
 	function handleKeyDown(event: KeyboardEvent) {
@@ -381,9 +419,10 @@
 		onconnectstart={handleConnectStart}
 		onconnectend={handleConnectEnd}
 		isValidConnection={validateConnection}
-		panOnDrag={selectedTool === 'pan' ? [0, 1, 2] : false}
-		selectionOnDrag={selectedTool === 'select'}
+		panOnDrag={readOnly ? [0, 1, 2] : selectedTool === 'pan' ? [0, 1, 2] : false}
+		selectionOnDrag={readOnly ? false : selectedTool === 'select'}
 		elementsSelectable={true}
+		nodesConnectable={!readOnly}
 		zoomOnDoubleClick={false}
 		defaultEdgeOptions={{
 			type: 'floating',
@@ -395,34 +434,16 @@
 		<MiniMap />
 	</SvelteFlow>
 
-	<!-- Delete Edge Button (on edge) -->
-	{#if selectedEdge && edgeButtonPosition}
-		<div 
-			class="fixed z-50"
-			style="left: {edgeButtonPosition.x}px; top: {edgeButtonPosition.y}px; transform: translate(-50%, -50%);"
-		>
-			<Button
-				variant="destructive"
-				size="icon"
-				onclick={handleDeleteEdge}
-				class="h-9 w-9 rounded-full shadow-xl hover:scale-110 transition-transform animate-in zoom-in-50 duration-200"
-				title="Delete Connection"
-			>
-				<Trash2 class="h-4 w-4" />
-			</Button>
-		</div>
-	{/if}
-
 	<!-- Tool Instructions -->
-	{#if selectedTool === 'character'}
+	{#if !readOnly && selectedTool === 'character'}
 		<div class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-border shadow-lg z-10">
 			<p class="text-sm text-muted-foreground">Click anywhere on the canvas to add a character</p>
 		</div>
-	{:else if selectedTool === 'message'}
+	{:else if !readOnly && selectedTool === 'message'}
 		<div class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-border shadow-lg z-10">
 			<p class="text-sm text-muted-foreground">Click anywhere on the canvas to add a message</p>
 		</div>
-	{:else if selectedTool === 'pan'}
+	{:else if !readOnly && selectedTool === 'pan'}
 		<div class="absolute bottom-4 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur-sm px-4 py-2 rounded-lg border border-border shadow-lg z-10">
 			<p class="text-sm text-muted-foreground">Drag to pan around the canvas</p>
 		</div>

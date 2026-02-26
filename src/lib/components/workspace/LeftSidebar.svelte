@@ -14,6 +14,7 @@
 		selectedTool: Tool;
 		onToolSelect: (tool: Tool) => void;
 		selectedElement: string | null;
+		readOnly?: boolean;
 		elementCount: {
 			characters: number;
 			messages: number;
@@ -21,14 +22,15 @@
 		};
 	}
 
-	let { selectedTool, onToolSelect, selectedElement, elementCount }: Props = $props();
+	let { selectedTool, onToolSelect, selectedElement, readOnly = false, elementCount }: Props = $props();
 
-	const tools: Array<{ id: Tool; icon: ComponentType; label: string; shortcut: string }> = [
+	const allTools: Array<{ id: Tool; icon: ComponentType; label: string; shortcut: string }> = [
 		{ id: 'select', icon: MousePointer2, label: 'Select', shortcut: 'V' },
 		{ id: 'pan', icon: Hand, label: 'Pan', shortcut: 'H' },
 		{ id: 'character', icon: User, label: 'Character', shortcut: 'C' },
 		{ id: 'message', icon: MessageSquare, label: 'Message', shortcut: 'M' }
 	];
+	const tools = $derived(readOnly ? allTools.filter((tool) => tool.id === 'select' || tool.id === 'pan') : allTools);
 
 	function handleImportJson() {
 		const input = document.createElement('input');

@@ -7,11 +7,12 @@
 	import { MessageSquare, Clock, AlertCircle, Reply } from 'lucide-svelte';
 	import { nodeConnectionModes, setNodeConnectionMode } from '$lib/stores/appStore';
 
-		interface Props {
+	interface Props {
 		data: {
 			message: Message;
 			character?: Character;
 			isSelected: boolean;
+			readOnly?: boolean;
 			replyToMessage?: Message;
 			replyCharacter?: Character;
 			onTextUpdate?: (id: string, text: string) => void;
@@ -24,6 +25,7 @@
 	let isEditing = $state(false);
 	let editText = $state(data.message.text);
 	let textareaRef: HTMLTextAreaElement | null = $state(null);
+	const isReadOnly = $derived(data.readOnly ?? false);
 	
 	// Subscribe to nodeConnectionModes store and get this node's mode
 	let nodeConnectionMode = $state<'flow' | 'reply'>('flow');
@@ -37,6 +39,7 @@
 	});
 
 	const activateEditing = (event?: Event) => {
+		if (isReadOnly) return;
 		event?.stopPropagation();
 		isEditing = true;
 		editText = data.message.text;
@@ -47,6 +50,7 @@
 	};
 
 	const handleKeyActivate = (e: KeyboardEvent) => {
+		if (isReadOnly) return;
 		if (e.key === 'Enter' || e.key === ' ') {
 			e.preventDefault();
 			activateEditing(e);
@@ -54,6 +58,10 @@
 	};
 
 	const handleTextSubmit = () => {
+		if (isReadOnly) {
+			isEditing = false;
+			return;
+		}
 		if (data.onTextUpdate) {
 			data.onTextUpdate(data.message.id, editText);
 		}
@@ -61,6 +69,7 @@
 	};
 
 	const handleKeyDown = (e: KeyboardEvent) => {
+		if (isReadOnly) return;
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
 			handleTextSubmit();
@@ -79,7 +88,9 @@
 
 	const isSelectMode = $derived(data.selectedTool === 'select');
 	const handleVisibility = $derived(
-		isSelectMode && data.isSelected
+		isReadOnly
+			? 'hidden'
+			: isSelectMode && data.isSelected
 			? 'opacity-100'
 			: isSelectMode
 				? 'opacity-70 group-hover:opacity-100'
@@ -97,68 +108,70 @@
 	);
 </script>
 
-<div class="relative group {isSelectMode ? 'cursor-pointer' : ''}">
+<div class="relative group {isSelectMode && !isReadOnly ? 'cursor-pointer' : ''}">
 	<!-- Connection Handles - 4 points (top, right, bottom, left) -->
-	<Handle
-		type="source"
-		position={Position.Top}
-		id="source-top"
-		class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-		isConnectable={true}
-	/>
-	<Handle
-		type="source"
-		position={Position.Right}
-		id="source-right"
-		class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-		isConnectable={true}
-	/>
-	<Handle
-		type="source"
-		position={Position.Bottom}
-		id="source-bottom"
-		class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-		isConnectable={true}
-	/>
-	<Handle
-		type="source"
-		position={Position.Left}
-		id="source-left"
-		class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-		isConnectable={true}
-	/>
-	<Handle
-		type="target"
-		position={Position.Top}
-		id="target-top"
-		class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-		isConnectable={true}
-	/>
-	<Handle
-		type="target"
-		position={Position.Right}
-		id="target-right"
-		class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-		isConnectable={true}
-	/>
-	<Handle
-		type="target"
-		position={Position.Bottom}
-		id="target-bottom"
-		class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-		isConnectable={true}
-	/>
-	<Handle
-		type="target"
-		position={Position.Left}
-		id="target-left"
-		class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-		isConnectable={true}
-	/>
+	{#if !isReadOnly}
+		<Handle
+			type="source"
+			position={Position.Top}
+			id="source-top"
+			class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+			isConnectable={true}
+		/>
+		<Handle
+			type="source"
+			position={Position.Right}
+			id="source-right"
+			class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+			isConnectable={true}
+		/>
+		<Handle
+			type="source"
+			position={Position.Bottom}
+			id="source-bottom"
+			class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+			isConnectable={true}
+		/>
+		<Handle
+			type="source"
+			position={Position.Left}
+			id="source-left"
+			class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+			isConnectable={true}
+		/>
+		<Handle
+			type="target"
+			position={Position.Top}
+			id="target-top"
+			class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+			isConnectable={true}
+		/>
+		<Handle
+			type="target"
+			position={Position.Right}
+			id="target-right"
+			class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+			isConnectable={true}
+		/>
+		<Handle
+			type="target"
+			position={Position.Bottom}
+			id="target-bottom"
+			class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+			isConnectable={true}
+		/>
+		<Handle
+			type="target"
+			position={Position.Left}
+			id="target-left"
+			class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+			isConnectable={true}
+		/>
+	{/if}
 
 	<!-- Message Node Card -->
 	<div
-		class="bg-card border rounded-lg p-4 max-w-xs shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer backdrop-blur-sm
+		class="bg-card border rounded-lg p-4 max-w-xs shadow-sm hover:shadow-md transition-all duration-200 {isReadOnly ? 'cursor-default' : 'cursor-pointer'} backdrop-blur-sm
 			{selected ? 'border-orange-500 ring-2 ring-orange-500/20 shadow-lg' : 'border-border hover:border-border/80'}"
 		ondblclick={handleDoubleClick}
 		role="button"
@@ -214,13 +227,15 @@
 						<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300 font-medium">ON</span>
 					{/if}
 				</div>
-				<Switch
-					checked={nodeConnectionMode === 'reply'}
-					onCheckedChange={(checked) => {
-						setNodeConnectionMode(data.message.id, checked ? 'reply' : 'flow');
-					}}
-					class="scale-75"
-				/>
+				{#if !isReadOnly}
+					<Switch
+						checked={nodeConnectionMode === 'reply'}
+						onCheckedChange={(checked) => {
+							setNodeConnectionMode(data.message.id, checked ? 'reply' : 'flow');
+						}}
+						class="scale-75"
+					/>
+				{/if}
 			</div>
 			<p class="text-[10px] text-muted-foreground/80 mt-1 leading-tight">
 				{nodeConnectionMode === 'reply'
@@ -252,7 +267,7 @@
 
 		<!-- Message Content -->
 		<div class="mb-3">
-			{#if isEditing}
+			{#if isEditing && !isReadOnly}
 				<Textarea
 					bind:value={editText}
 					bind:ref={textareaRef}
@@ -263,7 +278,7 @@
 					placeholder="Enter message content..."
 					onclick={(e) => e.stopPropagation()}
 				/>
-			{:else}
+			{:else if !isReadOnly}
 				<div
 					class="text-sm leading-relaxed break-words min-h-[3rem] p-3 bg-muted rounded-md cursor-text hover:bg-muted/80 transition-colors border border-transparent hover:border-border"
 					onclick={handleDoubleClick}
@@ -275,6 +290,14 @@
 						{data.message.text}
 					{:else}
 						<span class="text-muted-foreground italic">Double-click to edit...</span>
+					{/if}
+				</div>
+			{:else}
+				<div class="text-sm leading-relaxed break-words min-h-[3rem] p-3 bg-muted/60 rounded-md border border-transparent">
+					{#if data.message.text}
+						{data.message.text}
+					{:else}
+						<span class="text-muted-foreground italic">No content</span>
 					{/if}
 				</div>
 			{/if}

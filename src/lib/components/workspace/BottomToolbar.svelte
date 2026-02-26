@@ -15,6 +15,7 @@
 		selectedTool: Tool;
 		onToolSelect: (tool: Tool) => void;
 		selectedElement: string | null;
+		readOnly?: boolean;
 		elementCount: {
 			characters: number;
 			messages: number;
@@ -28,6 +29,7 @@
 		selectedTool,
 		onToolSelect,
 		selectedElement,
+		readOnly = false,
 		elementCount,
 		onDelete,
 		onDuplicate
@@ -57,7 +59,9 @@
 	<div class="flex items-center justify-between">
 		<!-- Left: Selection Info -->
 		<div class="flex items-center gap-3">
-			{#if selectedElement}
+			{#if readOnly}
+				<div class="text-sm text-muted-foreground">View-only graph</div>
+			{:else if selectedElement}
 				<div class="text-sm text-muted-foreground">
 					<span class="font-medium text-foreground">Selected:</span>
 					{selectedElement.startsWith('char') ? 'Character' : 'Message'}
@@ -93,7 +97,7 @@
 			<Button 
 				variant="ghost" 
 				size="sm" 
-				disabled={!selectedElement} 
+				disabled={readOnly || !selectedElement} 
 				title="Duplicate (Ctrl+D)"
 				onclick={handleDuplicate}
 				class="hover:bg-blue-50 hover:text-blue-600"
@@ -103,7 +107,7 @@
 			<Button 
 				variant="ghost" 
 				size="sm" 
-				disabled={!selectedElement} 
+				disabled={readOnly || !selectedElement} 
 				title="Delete (Del)"
 				onclick={handleDelete}
 				class="hover:bg-destructive/10 hover:text-destructive"
