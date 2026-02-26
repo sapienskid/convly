@@ -663,12 +663,14 @@
 		importConversationFromJSON,
 		sendMessageFromPreview,
 		autoArrangeGraph,
+		applyConversationQAFix,
 		handleApplyCustomization,
 		deleteElement,
 		addCharacter,
 		addMessage
 	} from '$lib/stores/appStore';
 	import type { Tool } from '$lib/types';
+	import type { ConversationFixAction } from '$lib/utils/conversationQA';
 
 	function handleToolSelect(tool: Tool) {
 		if (graphReadOnly && (tool === 'character' || tool === 'message')) {
@@ -961,6 +963,10 @@
 		}
 	}
 
+	function handleConversationFix(action: ConversationFixAction): number {
+		return applyConversationQAFix(action);
+	}
+
 </script>
 
 <svelte:window onkeydown={handleKeyboardShortcut} />
@@ -1152,6 +1158,7 @@
 				onExportVideo={handleExportVideo}
 				onCancelExport={handleCancelExport}
 				onCustomizationApply={handleApplyCustomization}
+				onConversationFix={handleConversationFix}
 			/>
 		</div>
 	</div>

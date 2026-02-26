@@ -29,9 +29,15 @@
 		Pause,
 		Music2,
 		Download,
-		X
+		X,
+		ShieldAlert,
+		Wrench
 	} from 'lucide-svelte/icons';
 	import { buildMessageAnimationTimeline } from '$lib/utils/animationTimeline';
+	import {
+		analyzeConversationQA,
+		type ConversationFixAction
+	} from '$lib/utils/conversationQA';
 
 	type SelectOption = { value: string; label: string };
 
@@ -53,6 +59,7 @@
 		onExportVideo: () => void;
 		onCancelExport?: () => void;
 		onCustomizationApply: (settings: Partial<CustomizationSettings>) => void;
+		onConversationFix: (action: ConversationFixAction) => number;
 	}
 
 	let {
@@ -72,7 +79,8 @@
 		onMusicToggle,
 		onExportVideo,
 		onCancelExport,
-		onCustomizationApply
+		onCustomizationApply,
+		onConversationFix
 	}: Props = $props();
 
 	let channelName = $state(customizeSettings.channelName);
@@ -90,6 +98,7 @@
 	let exportFormat = $state(customizeSettings.exportFormat);
 	let codec = $state(customizeSettings.codec);
 	let enableCompression = $state(customizeSettings.enableCompression);
+	let qaStatusMessage = $state<string | null>(null);
 
 	const templateOptions: Array<{
 		value: ChatPlatformSetting;
@@ -206,6 +215,7 @@
 	const activeTemplate = $derived(
 		templateOptions.find((template) => template.value === chatPlatform) ?? templateOptions[0]
 	);
+	const qaReport = $derived(analyzeConversationQA(characters, messages, connections));
 
 	const estimatedVideoLength = $derived.by(() => {
 		return buildMessageAnimationTimeline(messages, connections, {
@@ -263,6 +273,14 @@
 	function handleApplySettings(overrides: Partial<CustomizationSettings>) {
 		onCustomizationApply({ ...overrides });
 	}
+
+	function applyConversationFix(action: ConversationFixAction) {
+		const fixedCount = onConversationFix(action);
+		qaStatusMessage =
+			fixedCount > 0
+				? `Auto-fix updated ${fixedCount} issue(s).`
+				: 'No changes were required.';
+	}
 </script>
 
 <div class="flex h-full min-h-0 flex-col bg-gradient-to-b from-card to-card/50">
@@ -285,7 +303,7 @@
 		<div class="p-6 pb-8">
 			<Accordion
 				type="multiple"
-				value={['templates', 'timing', 'audio', 'video']}
+				value={['templates', 'qa', 'timing', 'audio', 'video']}
 				class="w-full space-y-2"
 			>
 				<AccordionItem value="templates">
@@ -326,6 +344,73 @@
 									</button>
 								{/each}
 							</div>
+						</div>
+					</AccordionContent>
+				</AccordionItem>
+
+				<AccordionItem value="qa">
+					<AccordionTrigger>
+						<div class="flex items-center gap-2">
+							<ShieldAlert class="size-4" />
+							<span>Conversation QA</span>
+						</div>
+					</AccordionTrigger>
+					<AccordionContent>
+						<div class="space-y-3 pt-2">
+							<div class="rounded-lg border border-border bg-muted/20 p-3">
+								<div class="flex items-center justify-between">
+									<p class="text-xs uppercase tracking-wide text-muted-foreground">Readiness Score</p>
+									<p class="text-sm font-semibold">{qaReport.readinessScore}%</p>
+								</div>
+								<div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-secondary">
+									<div
+										class="h-full transition-all duration-200 {qaReport.readinessScore >= 80 ? 'bg-emerald-500' : qaReport.readinessScore >= 60 ? 'bg-amber-500' : 'bg-rose-500'}"
+										style="width: {qaReport.readinessScore}%"
+									></div>
+								</div>
+								<p class="mt-2 text-xs text-muted-foreground">
+									{qaReport.errorCount} error(s), {qaReport.warningCount} warning(s)
+								</p>
+							</div>
+
+							{#if qaStatusMessage}
+								<p class="text-xs text-muted-foreground">{qaStatusMessage}</p>
+							{/if}
+
+							{#if qaReport.issues.length === 0}
+								<div class="rounded-lg border border-emerald-500/35 bg-emerald-500/10 p-3 text-xs text-emerald-700">
+									No QA issues detected. Conversation is export-ready.
+								</div>
+							{:else}
+								<div class="space-y-2">
+									{#each qaReport.issues as issue (issue.id)}
+										<div class="rounded-lg border border-border bg-background p-3">
+											<div class="flex items-start justify-between gap-2">
+												<div class="min-w-0">
+													<p class="text-sm font-semibold leading-tight">{issue.title}</p>
+													<p class="mt-1 text-xs text-muted-foreground">{issue.description}</p>
+												</div>
+												<span
+													class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide {issue.severity === 'error' ? 'bg-destructive/15 text-destructive' : 'bg-amber-500/15 text-amber-700'}"
+												>
+													{issue.severity}
+												</span>
+											</div>
+											{#if issue.fixAction}
+												<Button
+													variant="outline"
+													size="sm"
+													class="mt-2"
+													onclick={() => applyConversationFix(issue.fixAction!)}
+												>
+													<Wrench class="mr-2 size-3.5" />
+													Auto-fix
+												</Button>
+											{/if}
+										</div>
+									{/each}
+								</div>
+							{/if}
 						</div>
 					</AccordionContent>
 				</AccordionItem>
