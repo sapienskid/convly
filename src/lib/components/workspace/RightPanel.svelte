@@ -221,7 +221,7 @@
 		<div class="mb-2 flex items-center gap-3">
 			<div
 				class="flex h-10 w-10 items-center justify-center rounded-xl shadow-lg"
-				style="background: linear-gradient(135deg, {primaryColor}, {textColor}aa);"
+				style="background: linear-gradient(135deg, {primaryColor}, #14b8a6);"
 			>
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
@@ -239,8 +239,8 @@
 				</svg>
 			</div>
 			<div>
-				<h2 class="text-lg font-bold">Customization</h2>
-				<p class="text-xs text-muted-foreground">Fine-tune your video</p>
+				<h2 class="text-lg font-bold">Studio Controls</h2>
+				<p class="text-xs text-muted-foreground">Dial in style, pacing, and export quality</p>
 			</div>
 		</div>
 	</div>

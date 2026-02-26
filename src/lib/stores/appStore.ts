@@ -14,22 +14,22 @@ const demoCharacters: Character[] = [
 	{
 		id: 'char-demo-1',
 		username: 'Alex Chen',
-		avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=AlexChen&backgroundColor=b6e3f4,c0aede,d1d4f9&scale=90',
-		roleColor: '#3b82f6',
+		avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=AlexChen&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90',
+		roleColor: '#2563eb',
 		position: { x: 100, y: 100 }
 	},
 	{
 		id: 'char-demo-2',
 		username: 'Sarah Wilson',
-		avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=SarahWilson&backgroundColor=b6e3f4,c0aede,d1d4f9&scale=90',
-		roleColor: '#8b5cf6',
+		avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=SarahWilson&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90',
+		roleColor: '#ff6f3b',
 		position: { x: 100, y: 300 }
 	},
 	{
 		id: 'char-demo-3',
 		username: 'Priya Nair',
-		avatar: 'https://api.dicebear.com/7.x/notionists/svg?seed=PriyaNair&backgroundColor=b6e3f4,c0aede,d1d4f9&scale=90',
-		roleColor: '#14b8a6',
+		avatar: 'https://api.dicebear.com/7.x/notionists/svg?seed=PriyaNair&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90',
+		roleColor: '#0ea5a4',
 		position: { x: 100, y: 500 }
 	}
 ];
@@ -110,7 +110,7 @@ const demoMessages: Message[] = demoConversation.map((entry, index) => ({
 	replyTo: entry.replyTo
 }));
 
-const demoFlowColors = ['#10b981', '#f59e0b', '#3b82f6', '#8b5cf6', '#ef4444'];
+const demoFlowColors = ['#ff6f3b', '#0ea5a4', '#2563eb', '#f59e0b', '#ef4444'];
 const demoCharacterColors = Object.fromEntries(demoCharacters.map((character) => [character.id, character.roleColor]));
 
 const demoConnections: Connection[] = [
@@ -146,7 +146,7 @@ function mergeCustomizationSettings(
 	} as CustomizationSettings;
 }
 
-const flowColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
+const flowColors = ['#ff6f3b', '#0ea5a4', '#2563eb', '#f59e0b', '#ef4444', '#14b8a6', '#0f766e', '#64748b'];
 
 function getMessageToMessageHandles(fromMessage: Message, toMessage: Message) {
 	const dx = toMessage.position.x - fromMessage.position.x;
@@ -709,7 +709,7 @@ export function addCharacterAtPosition(position: { x: number; y: number }): stri
 		y: Math.max(50, position.y + (Math.random() - 0.5) * 40)
 	};
 
-	const colors = ['#3b82f6', '#8b5cf6', '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#ec4899'];
+	const colors = ['#ff6f3b', '#0ea5a4', '#2563eb', '#f59e0b', '#ef4444', '#14b8a6', '#0f766e', '#64748b'];
 	const avatarStyles = ['bottts', 'avataaars', 'pixel-art', 'lorelei', 'notionists'];
 	const username = `User ${chars.length + 1}`;
 	const randomStyle = avatarStyles[Math.floor(Math.random() * avatarStyles.length)];
@@ -717,7 +717,7 @@ export function addCharacterAtPosition(position: { x: number; y: number }): stri
 	
 	const newCharacter = {
 		username,
-		avatar: `https://api.dicebear.com/7.x/${randomStyle}/svg?seed=${randomSeed}&backgroundColor=b6e3f4,c0aede,d1d4f9&scale=90`,
+		avatar: `https://api.dicebear.com/7.x/${randomStyle}/svg?seed=${randomSeed}&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90`,
 		roleColor: colors[Math.floor(Math.random() * colors.length)],
 		position: adjustedPosition
 	};
@@ -1004,7 +1004,7 @@ export function importConversationFromJSON(payload: unknown) {
 		}
 	}
 
-	const colorPalette = ['#3b82f6', '#8b5cf6', '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#ec4899'];
+	const colorPalette = ['#ff6f3b', '#0ea5a4', '#2563eb', '#f59e0b', '#ef4444', '#14b8a6', '#0f766e', '#64748b'];
 	const speakerMap = new Map<string, Character>();
 	const importedCharacters: Character[] = uniqueSpeakers.map((speaker, index) => {
 		const id = `char-import-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`;
@@ -1013,7 +1013,7 @@ export function importConversationFromJSON(payload: unknown) {
 			username: speaker,
 			avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(
 				speaker
-			)}&backgroundColor=b6e3f4,c0aede,d1d4f9&scale=90`,
+			)}&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90`,
 			roleColor: colorPalette[index % colorPalette.length],
 			position: { x: 100, y: 80 + index * 180 }
 		};

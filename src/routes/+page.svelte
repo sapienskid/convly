@@ -875,22 +875,30 @@
 
 	<!-- Main Content Area - Canvas Workspace -->
 	<div class="flex flex-1 flex-col border-r border-border bg-background">
-		<div class="flex items-center justify-between border-b border-border bg-card/60 px-3 py-2">
-			<div class="inline-flex rounded-md border border-border bg-muted/30 p-1">
-				<Button
-					size="sm"
-					variant={editorView === 'graph' ? 'default' : 'ghost'}
-					onclick={() => setEditorMode('graph')}
-				>
-					Graph
-				</Button>
-				<Button
-					size="sm"
-					variant={editorView === 'json' ? 'default' : 'ghost'}
-					onclick={() => setEditorMode('json')}
-				>
-					JSON
-				</Button>
+		<div class="flex items-center justify-between border-b border-border bg-card/70 px-3 py-2 backdrop-blur-sm">
+			<div class="flex items-center gap-3">
+				<div class="hidden rounded-lg border border-border bg-background/70 px-2.5 py-1 md:block">
+					<p class="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+						Convly Studio
+					</p>
+					<p class="text-[0.68rem] font-medium text-foreground/80">Storyboard Workspace</p>
+				</div>
+				<div class="inline-flex rounded-md border border-border bg-muted/30 p-1">
+					<Button
+						size="sm"
+						variant={editorView === 'graph' ? 'default' : 'ghost'}
+						onclick={() => setEditorMode('graph')}
+					>
+						Graph
+					</Button>
+					<Button
+						size="sm"
+						variant={editorView === 'json' ? 'default' : 'ghost'}
+						onclick={() => setEditorMode('json')}
+					>
+						JSON
+					</Button>
+				</div>
 			</div>
 			{#if editorView === 'json'}
 				<div class="flex items-center gap-2">

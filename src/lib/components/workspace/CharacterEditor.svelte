@@ -21,17 +21,17 @@
 	let avatarSeed = $state(character?.username || 'default');
 	let avatarStyle = $state<'pixel-art' | 'bottts' | 'avataaars' | 'lorelei' | 'notionists'>('bottts');
 	let username = $state(character?.username || '');
-	let roleColor = $state(character?.roleColor || '#3b82f6');
+	let roleColor = $state(character?.roleColor || '#ff6f3b');
 	let roleTitle = $state<string>('Member');
 
 	// Predefined role colors and titles
 	const roles = [
 		{ title: 'Owner', color: '#ef4444' },
-		{ title: 'Admin', color: '#f97316' },
-		{ title: 'Moderator', color: '#8b5cf6' },
-		{ title: 'Member', color: '#3b82f6' },
-		{ title: 'VIP', color: '#eab308' },
-		{ title: 'Guest', color: '#6b7280' }
+		{ title: 'Admin', color: '#ff6f3b' },
+		{ title: 'Moderator', color: '#0ea5a4' },
+		{ title: 'Member', color: '#2563eb' },
+		{ title: 'VIP', color: '#f59e0b' },
+		{ title: 'Guest', color: '#64748b' }
 	];
 
 	const avatarStyles = [
@@ -44,7 +44,7 @@
 
 	// Generate avatar URL using DiceBear API (similar to Avatartion)
 	const generateAvatarUrl = $derived(
-		`https://api.dicebear.com/7.x/${avatarStyle}/svg?seed=${encodeURIComponent(avatarSeed)}&backgroundColor=b6e3f4,c0aede,d1d4f9&scale=90`
+		`https://api.dicebear.com/7.x/${avatarStyle}/svg?seed=${encodeURIComponent(avatarSeed)}&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90`
 	);
 
 	// Update form when character changes

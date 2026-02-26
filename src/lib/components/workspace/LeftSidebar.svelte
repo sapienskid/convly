@@ -7,7 +7,6 @@
 	import Hand from 'lucide-svelte/icons/hand';
 	import User from 'lucide-svelte/icons/user';
 	import MessageSquare from 'lucide-svelte/icons/message-square';
-	import MessageCircle from 'lucide-svelte/icons/message-circle';
 	import Code2 from 'lucide-svelte/icons/code-2';
 	import { importConversationFromJSON } from '$lib/stores/appStore';
 
@@ -54,14 +53,13 @@
 <div class="flex h-full w-16 flex-col border-r border-border bg-card">
 	<!-- Top - Logo/Brand Area -->
 	<div class="flex flex-col items-center gap-1 p-2">
-		<Button
-			variant="ghost"
-			size="icon"
-			class="h-10 w-10 bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
-			title="Home"
+		<div
+			class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-teal-500 text-xs font-black tracking-[0.12em] text-white shadow-lg"
+			title="Convly Studio"
 		>
-			<MessageCircle class="size-5" />
-		</Button>
+			CS
+		</div>
+		<span class="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Studio</span>
 
 		<Separator class="my-2" />
 
