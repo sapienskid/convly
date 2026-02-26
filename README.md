@@ -1,38 +1,52 @@
-# sv
+# Convly Studio
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Convly Studio is a visual conversation storyboard tool for building chat-style scenes and exporting polished vertical videos.
 
-## Creating a project
+## What It Does
 
-If you're seeing this, you've probably already done this step. Congrats!
+- Build conversation flow with characters, messages, and reply links.
+- Preview animated playback in a phone-style viewer.
+- Customize typography, colors, pacing, audio, and export settings.
+- Export rendered videos (`mp4` or `webm`) for social channels.
+- Import and apply conversation JSON quickly.
 
-```sh
-# create a new project in the current directory
-npx sv create
+## Tech Stack
 
-# create a new project in my-app
-npx sv create my-app
+- `SvelteKit` + `Svelte 5`
+- `Tailwind CSS v4`
+- `@xyflow/svelte` for graph editing
+- `Tauri v2` for desktop builds
+
+## Development
+
+Install dependencies:
+
+```bash
+pnpm install
 ```
 
-## Developing
+Run web app:
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+```bash
+pnpm dev
 ```
 
-## Building
+Run desktop app:
 
-To create a production version of your app:
-
-```sh
-npm run build
+```bash
+pnpm tauri:dev
 ```
 
-You can preview the production build with `npm run preview`.
+## Build
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+Build web output:
+
+```bash
+pnpm build
+```
+
+Build desktop bundles:
+
+```bash
+pnpm tauri:build
+```
