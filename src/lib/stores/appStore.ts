@@ -739,11 +739,21 @@ export function updateCharacter(id: string, updates: Partial<Character>) {
 }
 
 export function updateCharacterPosition(id: string, position: { x: number; y: number }) {
+	let changed = false;
 	characters.update((chars) =>
-		chars.map((char) => (char.id === id ? { ...char, position } : char))
+		chars.map((char) => {
+			if (char.id !== id) return char;
+			if (char.position.x === position.x && char.position.y === position.y) {
+				return char;
+			}
+			changed = true;
+			return { ...char, position };
+		})
 	);
-	// Recalculate connection handles for edges involving this character
-	recalculateHandlesForNode(id);
+	if (changed) {
+		// Recalculate connection handles for edges involving this character.
+		recalculateHandlesForNode(id);
+	}
 }
 
 export function updateCharacterRotation(id: string, rotation: number) {
@@ -791,8 +801,20 @@ export function updateMessage(id: string, updates: Partial<Message>, skipPropaga
 }
 
 export function updateMessagePosition(id: string, position: { x: number; y: number }) {
-	messages.update((msgs) => msgs.map((msg) => (msg.id === id ? { ...msg, position } : msg)));
-	recalculateHandlesForNode(id);
+	let changed = false;
+	messages.update((msgs) =>
+		msgs.map((msg) => {
+			if (msg.id !== id) return msg;
+			if (msg.position.x === position.x && msg.position.y === position.y) {
+				return msg;
+			}
+			changed = true;
+			return { ...msg, position };
+		})
+	);
+	if (changed) {
+		recalculateHandlesForNode(id);
+	}
 }
 
 export function updateMessageRotation(id: string, rotation: number) {
@@ -803,32 +825,39 @@ export function updateMessageRotation(id: string, rotation: number) {
 function recalculateHandlesForNode(nodeId: string) {
 	const chars = get(characters);
 	const msgs = get(messages);
+	const charsById = new Map(chars.map((character) => [character.id, character]));
+	const msgsById = new Map(msgs.map((message) => [message.id, message]));
+
 	connections.update((conns) => {
-		return conns.map((conn) => {
+		let changed = false;
+		const nextConnections = conns.map((conn) => {
 			// Only adjust flow edges or assignment edges where dynamic positioning matters
 			if (conn.type === 'flow' && (conn.from === nodeId || conn.to === nodeId)) {
-				const fromMsg = msgs.find((m) => m.id === conn.from);
-				const toMsg = msgs.find((m) => m.id === conn.to);
+				const fromMsg = msgsById.get(conn.from);
+				const toMsg = msgsById.get(conn.to);
 				if (fromMsg && toMsg) {
 					const { sourceHandle: newSourceHandle, targetHandle: newTargetHandle } =
 						getMessageToMessageHandles(fromMsg, toMsg);
 					if (newSourceHandle !== conn.sourceHandle || newTargetHandle !== conn.targetHandle) {
+						changed = true;
 						return { ...conn, sourceHandle: newSourceHandle, targetHandle: newTargetHandle };
 					}
 				}
 			} else if (conn.type === 'assignment' && (conn.from === nodeId || conn.to === nodeId)) {
 				// Assignment is normalized as message -> character.
-				const msg = msgs.find((m) => m.id === conn.from);
-				const char = chars.find((c) => c.id === conn.to);
+				const msg = msgsById.get(conn.from);
+				const char = charsById.get(conn.to);
 				if (msg && char) {
 					const { sourceHandle, targetHandle } = getMessageToCharacterHandles(msg, char);
 					if (sourceHandle !== conn.sourceHandle || targetHandle !== conn.targetHandle) {
+						changed = true;
 						return { ...conn, sourceHandle, targetHandle };
 					}
 				}
 			}
 			return conn;
 		});
+		return changed ? nextConnections : conns;
 	});
 }
 

@@ -251,15 +251,6 @@
 		}
 	}
 
-	// Handle node dragging updates for responsive edges
-	const handleNodeDrag: NodeTargetEventWithPointer<MouseEvent | TouchEvent, Node> = ({
-		targetNode
-	}) => {
-		if (readOnly) return;
-		if (!targetNode) return;
-		syncNodePosition(targetNode);
-	};
-
 	function getNodeBox(node: Node) {
 		const isCharacter = node.id.startsWith('char');
 		const width = isCharacter ? 260 : 360;
@@ -274,23 +265,20 @@
 		};
 	}
 
-	function resolveNodeCollisions(nodeId: string): void {
-		const currentNode = nodes.find((node) => node.id === nodeId);
-		if (!currentNode) return;
-
-		let x = currentNode.position.x;
-		let y = currentNode.position.y;
+	function resolveNodeCollisions(targetNode: Node): { x: number; y: number } {
+		let x = targetNode.position.x;
+		let y = targetNode.position.y;
 		let iteration = 0;
 		const maxIterations = 14;
 		const buffer = 20;
 
 		while (iteration < maxIterations) {
 			let moved = false;
-			const candidateNode = { ...currentNode, position: { x, y } } as Node;
+			const candidateNode = { ...targetNode, position: { x, y } } as Node;
 			const candidateBox = getNodeBox(candidateNode);
 
 			for (const otherNode of nodes) {
-				if (otherNode.id === nodeId) continue;
+				if (otherNode.id === targetNode.id) continue;
 				const otherBox = getNodeBox(otherNode);
 
 				const overlapsHorizontally =
@@ -320,13 +308,7 @@
 			if (!moved) break;
 			iteration += 1;
 		}
-
-		if (x !== currentNode.position.x || y !== currentNode.position.y) {
-			syncNodePosition({
-				...currentNode,
-				position: { x: Math.round(x), y: Math.round(y) }
-			});
-		}
+		return { x: Math.round(x), y: Math.round(y) };
 	}
 
 	// Handle node drag end
@@ -335,8 +317,11 @@
 	}) => {
 		if (readOnly) return;
 		if (!targetNode) return;
-		syncNodePosition(targetNode);
-		resolveNodeCollisions(targetNode.id);
+		const resolvedPosition = resolveNodeCollisions(targetNode);
+		syncNodePosition({
+			...targetNode,
+			position: resolvedPosition
+		});
 	};
 
 	// Handle node click
@@ -410,7 +395,6 @@
 		{nodeTypes}
 		{edgeTypes}
 		fitView
-		onnodedrag={handleNodeDrag}
 		onnodedragstop={handleNodeDragStop}
 		onnodeclick={handleNodeClick}
 		onpaneclick={handlePaneClick}
