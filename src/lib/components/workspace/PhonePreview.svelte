@@ -73,10 +73,10 @@
 			: null
 	);
 
-	const backgroundColor = $derived(customizeSettings.backgroundColor || '#313338');
-	const primaryColor = $derived(customizeSettings.primaryColor || '#5865f2');
-	const textColor = $derived(customizeSettings.textColor || '#dcddde');
-	const channelName = $derived(customizeSettings.channelName || 'general');
+	const backgroundColor = $derived(customizeSettings.backgroundColor || '#1f2933');
+	const primaryColor = $derived(customizeSettings.primaryColor || '#ff6f3b');
+	const textColor = $derived(customizeSettings.textColor || '#f4f6f8');
+	const channelName = $derived(customizeSettings.channelName || 'announcements');
 
 	// Adapt foreground colors based on background luminance
 	const adaptedColors = $derived(() => {
@@ -94,24 +94,23 @@
 			headerBorder: isDark ? `${backgroundColor}44` : `${backgroundColor}66`,
 			hover: isDark ? `${backgroundColor}88` : `${backgroundColor}aa`,
 			input: isDark ? `${backgroundColor}66` : `${backgroundColor}88`,
-			text: isDark ? '#dcddde' : '#1f2937',
+			text: isDark ? '#f4f6f8' : '#1f2937',
 			textMuted: isDark ? `${textColor}88` : '#6b7280',
 			textDim: isDark ? `${textColor}66` : '#9ca3af',
 			textFaint: isDark ? `${textColor}50` : '#d1d5db'
 		};
 	});
 
-	const fontFamily = $derived(customizeSettings.fontFamily || 'Inter');
+	const fontFamily = $derived(customizeSettings.fontFamily || 'Instrument Sans');
 	const fontFamilyStack = $derived.by(() => {
 		const stacks: Record<string, string> = {
-			Inter: "'Inter', sans-serif",
-			Roboto: "'Roboto', sans-serif",
-			'Open Sans': "'Open Sans', sans-serif",
-			Lato: "'Lato', sans-serif",
-			Montserrat: "'Montserrat', sans-serif",
-			Poppins: "'Poppins', sans-serif"
+			'Instrument Sans': "'Instrument Sans', sans-serif",
+			'Bricolage Grotesque': "'Bricolage Grotesque', sans-serif",
+			Manrope: "'Manrope', sans-serif",
+			Archivo: "'Archivo', sans-serif",
+			'JetBrains Mono': "'JetBrains Mono', monospace"
 		};
-		return stacks[fontFamily] ?? "'Inter', sans-serif";
+		return stacks[fontFamily] ?? "'Instrument Sans', sans-serif";
 	});
 	const fontSize = $derived(customizeSettings.fontSize || 16);
 	const fontWeight = $derived(customizeSettings.fontWeight || 'normal');

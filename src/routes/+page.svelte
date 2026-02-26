@@ -436,7 +436,7 @@
 				animationSpeed: normalizedAnimationSpeed,
 				quality: $customizeSettings.quality,
 				channelName: exportChannelName,
-				backgroundColor: $customizeSettings.backgroundColor || '#313338',
+				backgroundColor: $customizeSettings.backgroundColor || '#1f2933',
 				outputFileStream: outputTarget.stream,
 				outputFileHandle: outputTarget.handle,
 				outputFileStreamMode: outputTarget.mode === 'none' ? undefined : outputTarget.mode,

@@ -72,13 +72,13 @@ export interface CustomizationSettings {
 }
 
 export const defaultCustomizationSettings: CustomizationSettings = {
-	channelName: 'general',
-	backgroundColor: '#313338',
+	channelName: 'announcements',
+	backgroundColor: '#1f2933',
 	backgroundImage: '',
 	backgroundTheme: 'none',
-	primaryColor: '#5865f2',
-	textColor: '#dcddde',
-	fontFamily: 'Inter',
+	primaryColor: '#ff6f3b',
+	textColor: '#f4f6f8',
+	fontFamily: 'Instrument Sans',
 	fontSize: 16,
 	fontWeight: 'normal',
 	messageSpacing: 12,

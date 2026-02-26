@@ -130,12 +130,11 @@
 	});
 
 	const fontFamilyOptions: SelectOption[] = [
-		{ value: 'Inter', label: 'Inter' },
-		{ value: 'Roboto', label: 'Roboto' },
-		{ value: 'Open Sans', label: 'Open Sans' },
-		{ value: 'Lato', label: 'Lato' },
-		{ value: 'Montserrat', label: 'Montserrat' },
-		{ value: 'Poppins', label: 'Poppins' }
+		{ value: 'Instrument Sans', label: 'Instrument Sans' },
+		{ value: 'Bricolage Grotesque', label: 'Bricolage Grotesque' },
+		{ value: 'Manrope', label: 'Manrope' },
+		{ value: 'Archivo', label: 'Archivo' },
+		{ value: 'JetBrains Mono', label: 'JetBrains Mono' }
 	];
 
 	const fontWeightOptions: SelectOption[] = [
@@ -292,7 +291,7 @@
 										bind:value={backgroundColor}
 										class="mt-1.5"
 										onblur={() => handleApplySettings({ backgroundColor })}
-										placeholder="#313338"
+										placeholder="#1f2933"
 									/>
 								</div>
 							</div>
@@ -315,7 +314,7 @@
 										bind:value={textColor}
 										class="mt-1.5"
 										onblur={() => handleApplySettings({ textColor })}
-										placeholder="#dcddde"
+										placeholder="#f4f6f8"
 									/>
 								</div>
 							</div>
@@ -338,7 +337,7 @@
 										bind:value={primaryColor}
 										class="mt-1.5"
 										onblur={() => handleApplySettings({ primaryColor })}
-										placeholder="#5865f2"
+										placeholder="#ff6f3b"
 									/>
 								</div>
 							</div>
@@ -859,8 +858,8 @@
 					</div>
 					
 					<div class="h-2 w-full overflow-hidden rounded-full bg-secondary">
-						<div 
-							class="h-full bg-gradient-to-r from-purple-600 to-pink-600 transition-all duration-300"
+						<div
+							class="h-full bg-gradient-to-r from-orange-500 to-teal-500 transition-all duration-300"
 							style="width: {exportProgress.percent}%"
 						></div>
 					</div>
@@ -879,7 +878,7 @@
 				</div>
 			{:else}
 				<Button
-					class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg transition-all duration-200 hover:from-purple-700 hover:to-pink-700 hover:shadow-xl"
+					class="w-full bg-gradient-to-r from-orange-500 to-teal-500 text-white shadow-lg transition-all duration-200 hover:from-orange-600 hover:to-teal-600 hover:shadow-xl"
 					onclick={onExportVideo}
 					disabled={isGenerating || messages.length === 0}
 					size="lg"
