@@ -77,28 +77,30 @@
 
 	const isSelectMode = $derived(data.selectedTool === 'select');
 	const handleVisibility = $derived(
-		isReadOnly ? 'hidden' : isSelectMode ? 'opacity-80 group-hover:opacity-100' : 'opacity-60 group-hover:opacity-90'
+		isReadOnly
+			? '!opacity-0 !pointer-events-none'
+			: isSelectMode
+				? 'opacity-80 group-hover:opacity-100'
+				: 'opacity-60 group-hover:opacity-90'
 	);
 </script>
 
 <div class="relative group {isSelectMode && !isReadOnly ? 'cursor-pointer' : ''}">
 	<!-- Connection Handles - Source on right, Target on left -->
-	{#if !isReadOnly}
-		<Handle
-			type="source"
-			position={Position.Right}
-			id="source"
-			class="!w-4 !h-4 !bg-blue-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-			isConnectable={true}
-		/>
-		<Handle
-			type="target"
-			position={Position.Left}
-			id="target"
-			class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-			isConnectable={true}
-		/>
-	{/if}
+	<Handle
+		type="source"
+		position={Position.Right}
+		id="source"
+		class="!w-4 !h-4 !bg-blue-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+		isConnectable={true}
+	/>
+	<Handle
+		type="target"
+		position={Position.Left}
+		id="target"
+		class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+		isConnectable={true}
+	/>
 
 	<!-- Character Node Card -->
 	<div

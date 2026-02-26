@@ -89,7 +89,7 @@
 	const isSelectMode = $derived(data.selectedTool === 'select');
 	const handleVisibility = $derived(
 		isReadOnly
-			? 'hidden'
+			? '!opacity-0 !pointer-events-none'
 			: isSelectMode && data.isSelected
 			? 'opacity-100'
 			: isSelectMode
@@ -110,64 +110,62 @@
 
 <div class="relative group {isSelectMode && !isReadOnly ? 'cursor-pointer' : ''}">
 	<!-- Connection Handles - 4 points (top, right, bottom, left) -->
-	{#if !isReadOnly}
-		<Handle
-			type="source"
-			position={Position.Top}
-			id="source-top"
-			class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-			isConnectable={true}
-		/>
-		<Handle
-			type="source"
-			position={Position.Right}
-			id="source-right"
-			class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-			isConnectable={true}
-		/>
-		<Handle
-			type="source"
-			position={Position.Bottom}
-			id="source-bottom"
-			class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-			isConnectable={true}
-		/>
-		<Handle
-			type="source"
-			position={Position.Left}
-			id="source-left"
-			class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-			isConnectable={true}
-		/>
-		<Handle
-			type="target"
-			position={Position.Top}
-			id="target-top"
-			class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-			isConnectable={true}
-		/>
-		<Handle
-			type="target"
-			position={Position.Right}
-			id="target-right"
-			class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-			isConnectable={true}
-		/>
-		<Handle
-			type="target"
-			position={Position.Bottom}
-			id="target-bottom"
-			class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-			isConnectable={true}
-		/>
-		<Handle
-			type="target"
-			position={Position.Left}
-			id="target-left"
-			class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
-			isConnectable={true}
-		/>
-	{/if}
+	<Handle
+		type="source"
+		position={Position.Top}
+		id="source-top"
+		class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+		isConnectable={true}
+	/>
+	<Handle
+		type="source"
+		position={Position.Right}
+		id="source-right"
+		class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+		isConnectable={true}
+	/>
+	<Handle
+		type="source"
+		position={Position.Bottom}
+		id="source-bottom"
+		class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+		isConnectable={true}
+	/>
+	<Handle
+		type="source"
+		position={Position.Left}
+		id="source-left"
+		class="!w-4 !h-4 !bg-orange-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+		isConnectable={true}
+	/>
+	<Handle
+		type="target"
+		position={Position.Top}
+		id="target-top"
+		class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+		isConnectable={true}
+	/>
+	<Handle
+		type="target"
+		position={Position.Right}
+		id="target-right"
+		class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+		isConnectable={true}
+	/>
+	<Handle
+		type="target"
+		position={Position.Bottom}
+		id="target-bottom"
+		class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+		isConnectable={true}
+	/>
+	<Handle
+		type="target"
+		position={Position.Left}
+		id="target-left"
+		class="!w-4 !h-4 !bg-green-500 !border-2 !border-white shadow-lg hover:!scale-150 transition-all duration-200 !rounded-full {handleVisibility} z-10"
+		isConnectable={true}
+	/>
 
 	<!-- Message Node Card -->
 	<div
