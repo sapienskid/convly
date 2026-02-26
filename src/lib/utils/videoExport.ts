@@ -32,6 +32,10 @@ export interface ExportProgress {
 	elapsedMs: number;
 }
 
+export interface DownloadVideoOptions {
+	revokeAfterMs?: number;
+}
+
 export type ProgressCallback = (progress: ExportProgress) => void;
 
 const QUALITY_BITRATES: Record<string, number> = {
@@ -41,13 +45,19 @@ const QUALITY_BITRATES: Record<string, number> = {
 	ultra: 15_000_000
 };
 
-/** Wait for DOM to be fully painted after state updates */
-function waitForDomPaint(): Promise<void> {
+/** Wait for DOM update turn, with optional paint synchronization when visible */
+function waitForDomPaint(preferAnimationFrame = true): Promise<void> {
 	return new Promise((resolve) => {
-		// requestAnimationFrame is heavily throttled (or paused) in background tabs.
-		// Fall back to a microtask so export can continue when the tab is hidden.
-		if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-			queueMicrotask(resolve);
+		const canUseAnimationFrame =
+			preferAnimationFrame &&
+			typeof requestAnimationFrame === 'function' &&
+			(typeof document === 'undefined' || document.visibilityState === 'visible');
+		if (!canUseAnimationFrame) {
+			if (typeof queueMicrotask === 'function') {
+				queueMicrotask(resolve);
+				return;
+			}
+			Promise.resolve().then(resolve);
 			return;
 		}
 
@@ -123,6 +133,22 @@ export class VideoExporter {
 	private videoEncoder: VideoEncoder | null = null;
 	private audioEncoder: AudioEncoder | null = null;
 
+	private closeEncoders(): void {
+		try {
+			this.videoEncoder?.close();
+		} catch {
+			// Ignore close errors.
+		}
+		this.videoEncoder = null;
+
+		try {
+			this.audioEncoder?.close();
+		} catch {
+			// Ignore close errors.
+		}
+		this.audioEncoder = null;
+	}
+
 	private setFatalError(error: unknown): void {
 		if (this.fatalError) return;
 
@@ -133,16 +159,7 @@ export class VideoExporter {
 		// Stop further async encoder callbacks so export halts quickly.
 		if (this.isClosingForFailure) return;
 		this.isClosingForFailure = true;
-		try {
-			this.videoEncoder?.close();
-		} catch {
-			// Ignore close errors while failing.
-		}
-		try {
-			this.audioEncoder?.close();
-		} catch {
-			// Ignore close errors while failing.
-		}
+		this.closeEncoders();
 	}
 
 	private throwIfFatalError(): void {
@@ -218,19 +235,57 @@ export class VideoExporter {
 			const StreamTargetClass = MuxerModule.StreamTarget as any;
 			const FileSystemWritableFileStreamTargetClass =
 				MuxerModule.FileSystemWritableFileStreamTarget as any;
-			const usingOutputFileStream =
+			const supportsNativeFileStreamTarget =
 				Boolean(this.options.outputFileStream) &&
 				typeof FileSystemWritableFileStreamTargetClass === 'function';
+			const supportsStreamTarget = typeof StreamTargetClass === 'function';
+			const supportsDirectWritableStream =
+				Boolean(this.options.outputFileStream) &&
+				typeof this.options.outputFileStream?.write === 'function';
 
 			type MuxerChunk = { position: number; data: Uint8Array<ArrayBuffer> };
 			const muxerChunks: MuxerChunk[] = [];
 			let muxerOutputSize = 0;
+			let streamWriteChain: Promise<void> = Promise.resolve();
+			let streamWriteError: Error | null = null;
+			const enqueueOutputStreamWrite = (data: Uint8Array, position: number): void => {
+				if (!this.options?.outputFileStream || streamWriteError) return;
+
+				const chunkCopy = new Uint8Array(data.byteLength) as Uint8Array<ArrayBuffer>;
+				chunkCopy.set(data);
+				streamWriteChain = streamWriteChain
+					.then(async () => {
+						if (!this.options?.outputFileStream) return;
+						await this.options.outputFileStream.write({
+							type: 'write',
+							position,
+							data: chunkCopy
+						});
+					})
+					.catch((error) => {
+						if (!streamWriteError) {
+							streamWriteError = error instanceof Error ? error : new Error(String(error));
+							this.setFatalError(streamWriteError);
+						}
+					});
+			};
+			const usingOutputFileStream =
+				Boolean(this.options.outputFileStream) &&
+				(supportsNativeFileStreamTarget || (supportsDirectWritableStream && supportsStreamTarget));
 			const target =
-				usingOutputFileStream
+				supportsNativeFileStreamTarget
 					? new FileSystemWritableFileStreamTargetClass(this.options.outputFileStream, {
 							chunkSize: 1024 * 1024
 						})
-					: typeof StreamTargetClass === 'function'
+					: usingOutputFileStream && supportsStreamTarget
+					? new StreamTargetClass({
+							onData: (data: Uint8Array, position: number) => {
+								enqueueOutputStreamWrite(data, position);
+							},
+							chunked: true,
+							chunkSize: 1024 * 1024
+						})
+					: supportsStreamTarget
 					? new StreamTargetClass({
 							onData: (data: Uint8Array, position: number) => {
 								const chunkCopy = new Uint8Array(data.byteLength) as Uint8Array<ArrayBuffer>;
@@ -430,14 +485,15 @@ export class VideoExporter {
 							return await decodeContext.decodeAudioData(arrayBuffer);
 						};
 
-					if (this.options.audio.musicEnabled && this.options.audio.musicTrackUrl) {
-						musicBuffer = await decodeAudio(this.options.audio.musicTrackUrl);
-					}
+					try {
+						if (this.options.audio.musicEnabled && this.options.audio.musicTrackUrl) {
+							musicBuffer = await decodeAudio(this.options.audio.musicTrackUrl);
+						}
 
-					if (this.options.audio.notificationEnabled && this.options.audio.notificationSoundUrl) {
-						notifBuffer = await decodeAudio(this.options.audio.notificationSoundUrl);
-					}
-
+						if (this.options.audio.notificationEnabled && this.options.audio.notificationSoundUrl) {
+							notifBuffer = await decodeAudio(this.options.audio.notificationSoundUrl);
+						}
+					} finally {
 						if (decodeContext) {
 							try {
 								await decodeContext.close();
@@ -445,6 +501,7 @@ export class VideoExporter {
 								// Ignore decode context close failures.
 							}
 						}
+					}
 
 					const musicLeft = musicBuffer ? musicBuffer.getChannelData(0) : null;
 					const musicRight = musicBuffer
@@ -546,12 +603,18 @@ export class VideoExporter {
 						offset += curSize;
 					}
 
-					await this.audioEncoder.flush();
+						await this.audioEncoder.flush();
+						try {
+							this.audioEncoder.close();
+						} catch {
+							// Ignore close errors after audio flush.
+						}
+						this.audioEncoder = null;
 
-					// Drop references to decoded PCM buffers as soon as possible.
-					musicBuffer = null;
-					notifBuffer = null;
-				} catch (err) {
+						// Drop references to decoded PCM buffers as soon as possible.
+						musicBuffer = null;
+						notifBuffer = null;
+					} catch (err) {
 					console.warn('Failed to generate offline audio track:', err);
 				}
 			}
@@ -624,6 +687,9 @@ export class VideoExporter {
 					autoDestruct: false
 				});
 			const captureContextRefreshEvery = Math.max(safeFps * 3, 72);
+			const maxEncodeQueueSize = Math.max(safeFps, 24);
+			const periodicFlushEvery = Math.max(safeFps, 24);
+			const cooperativeYieldEvery = Math.max(8, Math.floor(safeFps / 2));
 			let captureContext: CaptureContext | null = await createCaptureContext();
 
 			try {
@@ -644,9 +710,15 @@ export class VideoExporter {
 
 					const svelteTime = (frame / safeFps) * safeAnimationSpeed;
 					await onTimeUpdate(svelteTime);
-					await waitForDomPaint();
 
-					if (this.videoEncoder.encodeQueueSize > safeFps * 2) {
+					if (frame > 0 && frame % cooperativeYieldEvery === 0) {
+						await waitForDomPaint(false);
+					}
+
+					if (
+						this.videoEncoder.encodeQueueSize > maxEncodeQueueSize ||
+						(frame > 0 && (frame + 1) % periodicFlushEvery === 0)
+					) {
 						await this.videoEncoder.flush();
 					}
 
@@ -687,11 +759,6 @@ export class VideoExporter {
 					}
 					videoFrame.close();
 
-					// Keep encoder buffers bounded to avoid large tab memory spikes on long exports.
-					if ((frame + 1) % safeFps === 0) {
-						await this.videoEncoder.flush();
-					}
-
 					if (frame % progressEvery === 0 || frame === totalFrames - 1) {
 						const percent = Math.round(((frame + 1) / totalFrames) * 100);
 						onProgress({
@@ -725,19 +792,12 @@ export class VideoExporter {
 			await this.videoEncoder.flush();
 			this.throwIfFatalError();
 			this.muxer.finalize();
+			if (usingOutputFileStream) {
+				await streamWriteChain;
+				this.throwIfFatalError();
+			}
 			this.throwIfFatalError();
-			try {
-				this.videoEncoder.close();
-			} catch {
-				// Ignore close errors after successful finalize.
-			}
-			this.videoEncoder = null;
-			try {
-				this.audioEncoder?.close();
-			} catch {
-				// Ignore close errors after successful finalize.
-			}
-			this.audioEncoder = null;
+			this.closeEncoders();
 
 			if (usingOutputFileStream && this.options.outputFileStream) {
 				await this.options.outputFileStream.close();
@@ -824,16 +884,7 @@ export class VideoExporter {
 		if (this.options) {
 			this.options.outputFileHandle = null;
 		}
-		try {
-			this.videoEncoder?.close();
-		} catch {
-			// Ignore close errors during cancellation.
-		}
-		try {
-			this.audioEncoder?.close();
-		} catch {
-			// Ignore close errors during cancellation.
-		}
+		this.closeEncoders();
 	}
 
 	destroy(): void {
@@ -867,11 +918,15 @@ export class VideoExporter {
 	}
 }
 
-export function downloadVideo(blob: Blob, channelName: string): void {
+export function downloadVideo(
+	blob: Blob,
+	channelName: string,
+	options: DownloadVideoOptions = {}
+): Promise<void> {
 	const extension = blob.type.includes('mp4') ? 'mp4' : 'webm';
 	const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 	const filename = `convly-${channelName}-${timestamp}.${extension}`;
-	downloadBlob(blob, filename);
+	return downloadBlob(blob, filename, options);
 }
 
 export function getResolutionPreset(resolution: string): { width: number; height: number; aspectRatio: string; platform: string } {

@@ -321,10 +321,12 @@
 			}
 		}
 
-		const storageWithDirectory = navigator.storage as StorageManager & {
-			getDirectory?: () => Promise<FileSystemDirectoryHandle>;
-		};
-		if (typeof storageWithDirectory.getDirectory === 'function') {
+		const storageWithDirectory = navigator.storage as
+			| (StorageManager & {
+					getDirectory?: () => Promise<FileSystemDirectoryHandle>;
+			  })
+			| undefined;
+		if (storageWithDirectory && typeof storageWithDirectory.getDirectory === 'function') {
 			try {
 				// Disk-backed fallback avoids large in-memory mux buffers when save picker is unavailable.
 				const rootDirectory = await storageWithDirectory.getDirectory();
@@ -352,11 +354,27 @@
 	}
 
 	async function waitForLivePreviewElement(timeoutMs = 5000): Promise<HTMLDivElement> {
+		const waitForRenderTurn = () =>
+			new Promise<void>((resolve) => {
+				const canUseAnimationFrame =
+					typeof requestAnimationFrame === 'function' &&
+					(typeof document === 'undefined' || document.visibilityState === 'visible');
+				if (canUseAnimationFrame) {
+					requestAnimationFrame(() => resolve());
+					return;
+				}
+				if (typeof queueMicrotask === 'function') {
+					queueMicrotask(resolve);
+					return;
+				}
+				Promise.resolve().then(resolve);
+			});
+
 		const start = performance.now();
 
 		while (!livePreviewCaptureElement) {
 			await tick();
-			await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+			await waitForRenderTurn();
 
 			if (performance.now() - start >= timeoutMs) {
 				throw new Error('Live preview capture element failed to initialize');
@@ -388,7 +406,7 @@
 		const exportChannelName = $customizeSettings.channelName || 'general';
 		const outputTarget = await prepareOutputFileTarget(exportFormat, exportChannelName);
 		let outputTargetCleanup = outputTarget.cleanup;
-		let cleanupDeferred = false;
+		let deferredOutputCleanup: Promise<void> | null = null;
 
 		videoExporter = new VideoExporter();
 
@@ -431,7 +449,7 @@
 				}
 			});
 
-			const blob = await videoExporter.startRecording(
+			let blob = await videoExporter.startRecording(
 				animationTimeline,
 				screenCaptureElement,
 				(progress) => {
@@ -452,18 +470,23 @@
 				};
 			}
 
-			if (blob) {
-				downloadVideo(blob, $customizeSettings.channelName || 'video');
-				if (outputTarget.mode === 'opfs-temp' && outputTargetCleanup) {
-					cleanupDeferred = true;
-					const cleanupFn = outputTargetCleanup;
-					outputTargetCleanup = null;
-					setTimeout(() => {
-						cleanupFn().catch((cleanupError) => {
-							console.warn('Failed to cleanup temporary OPFS export file.', cleanupError);
-						});
-					}, 60000);
+				if (blob) {
+					const downloadRelease = downloadVideo(blob, $customizeSettings.channelName || 'video', {
+						revokeAfterMs: outputTarget.mode === 'opfs-temp' ? 5_000 : undefined
+					}).catch((downloadError) => {
+						console.warn('Failed to trigger video download.', downloadError);
+					});
+
+					if (outputTarget.mode === 'opfs-temp' && outputTargetCleanup) {
+						// Keep OPFS file alive until blob URL has had time to be consumed by the browser.
+						const cleanupFn = outputTargetCleanup;
+						outputTargetCleanup = null;
+					deferredOutputCleanup = downloadRelease.then(async () => {
+						await cleanupFn();
+					});
 				}
+
+				blob = null;
 			}
 
 			if (!didCancel) {
@@ -483,7 +506,12 @@
 				elapsedMs: 0
 			};
 		} finally {
-			if (!cleanupDeferred && outputTargetCleanup) {
+			if (videoExporter) {
+				videoExporter.destroy();
+				videoExporter = null;
+			}
+
+			if (outputTargetCleanup) {
 				try {
 					await outputTargetCleanup();
 				} catch (cleanupError) {
@@ -492,9 +520,11 @@
 				outputTargetCleanup = null;
 			}
 
-			if (videoExporter) {
-				videoExporter.destroy();
-				videoExporter = null;
+			if (deferredOutputCleanup) {
+				deferredOutputCleanup.catch((cleanupError) => {
+					console.warn('Failed to cleanup temporary OPFS export file.', cleanupError);
+				});
+				deferredOutputCleanup = null;
 			}
 
 			previewState.set(previousPreviewState);

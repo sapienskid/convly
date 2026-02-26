@@ -19,6 +19,10 @@ export interface FrameCaptureResult {
 	dataUrl: string;
 }
 
+export interface DownloadBlobOptions {
+	revokeAfterMs?: number;
+}
+
 /**
  * Capture an HTML element to a canvas using modern-screenshot.
  * Uses SVG foreignObject under the hood so the browser's native CSS
@@ -89,7 +93,21 @@ export function canvasToBlob(canvas: HTMLCanvasElement, type = 'image/png'): Pro
 	});
 }
 
-export function downloadBlob(blob: Blob, filename: string): void {
+function resolveObjectUrlLifetimeMs(blob: Blob, requestedMs?: number): number {
+	if (typeof requestedMs === 'number' && Number.isFinite(requestedMs) && requestedMs >= 0) {
+		return Math.round(requestedMs);
+	}
+
+	// Keep URL alive briefly to avoid retaining large blobs after download starts.
+	const estimatedTransferMs = (blob.size / (50 * 1024 * 1024)) * 1000;
+	return Math.round(Math.min(8_000, Math.max(2_000, 1_000 + estimatedTransferMs)));
+}
+
+export function downloadBlob(
+	blob: Blob,
+	filename: string,
+	options: DownloadBlobOptions = {}
+): Promise<void> {
 	const url = URL.createObjectURL(blob);
 	const link = document.createElement('a');
 	link.href = url;
@@ -97,10 +115,32 @@ export function downloadBlob(blob: Blob, filename: string): void {
 	link.style.display = 'none';
 
 	document.body.appendChild(link);
-	link.click();
-
-	setTimeout(() => {
-		document.body.removeChild(link);
+	let cleaned = false;
+	const cleanup = () => {
+		if (cleaned) return;
+		cleaned = true;
+		if (link.isConnected) {
+			document.body.removeChild(link);
+		}
 		URL.revokeObjectURL(url);
-	}, 100);
+	};
+
+	try {
+		link.click();
+	} catch (error) {
+		cleanup();
+		throw error;
+	}
+
+	if (link.isConnected) {
+		document.body.removeChild(link);
+	}
+
+	const lifetimeMs = resolveObjectUrlLifetimeMs(blob, options.revokeAfterMs);
+	return new Promise((resolve) => {
+		window.setTimeout(() => {
+			cleanup();
+			resolve();
+		}, lifetimeMs);
+	});
 }
