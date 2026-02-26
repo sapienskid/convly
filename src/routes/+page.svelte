@@ -6,6 +6,7 @@
 	import VideoControls from '$lib/components/workspace/VideoControls.svelte';
 	import BottomToolbar from '$lib/components/workspace/BottomToolbar.svelte';
 	import CharacterEditor from '$lib/components/workspace/CharacterEditor.svelte';
+	import CharacterManagerDialog from '$lib/components/workspace/CharacterManagerDialog.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { ChevronRight, ChevronLeft } from 'lucide-svelte/icons';
 	import { onMount, tick } from 'svelte';
@@ -14,8 +15,9 @@
 	import { extractAudioEventsFromTimeline } from '$lib/utils/audioMixer';
 	import { VideoExporter, downloadVideo, getResolutionPreset, type ExportProgress } from '$lib/utils/videoExport';
 	
-	let isRightPanelCollapsed = $state(false);
+	let isRightPanelCollapsed = $state(true);
 	const graphReadOnly = true;
+	let isCharacterManagerOpen = $state(false);
 	let editorView = $state<'graph' | 'json'>('graph');
 	let jsonEditorValue = $state('');
 	let jsonEditorError = $state<string | null>(null);
@@ -660,6 +662,7 @@
 		addMessageForCharacter,
 		importConversationFromJSON,
 		sendMessageFromPreview,
+		autoArrangeGraph,
 		handleApplyCustomization,
 		deleteElement,
 		addCharacter,
@@ -759,6 +762,14 @@
 	const editingCharacterData = $derived(
 		$editingCharacter ? $characters.find(c => c.id === $editingCharacter) ?? null : null
 	);
+	const messageCountByCharacter = $derived.by(() => {
+		const counts: Record<string, number> = {};
+		for (const message of $messages) {
+			if (!message.characterId) continue;
+			counts[message.characterId] = (counts[message.characterId] ?? 0) + 1;
+		}
+		return counts;
+	});
 
 	function handleDelete() {
 		if (graphReadOnly) return;
@@ -920,6 +931,36 @@
 		jsonEditorError = null;
 	}
 
+	function handleCharacterManagerCreate(payload: {
+		username: string;
+		avatar: string;
+		roleColor: string;
+	}) {
+		const newId = addCharacter({
+			username: payload.username,
+			avatar: payload.avatar,
+			roleColor: payload.roleColor,
+			position: { x: 100, y: 100 }
+		});
+		autoArrangeGraph({ force: true });
+		selectedElement.set(newId);
+	}
+
+	function handleCharacterManagerEdit(characterId: string) {
+		handleCharacterEdit(characterId);
+		isCharacterManagerOpen = false;
+	}
+
+	function handleCharacterManagerDelete(characterId: string) {
+		deleteElement(characterId, 'character');
+		if ($selectedElement === characterId) {
+			selectedElement.set(null);
+		}
+		if ($editingCharacter === characterId) {
+			editingCharacter.set(null);
+		}
+	}
+
 </script>
 
 <svelte:window onkeydown={handleKeyboardShortcut} />
@@ -956,6 +997,9 @@
 					</p>
 					<p class="text-[0.68rem] font-medium text-foreground/80">Graph Workspace</p>
 				</div>
+				<Button size="sm" variant="outline" onclick={() => (isCharacterManagerOpen = true)}>
+					Characters
+				</Button>
 				<div class="inline-flex rounded-md border border-border bg-muted/30 p-1">
 					<Button
 						size="sm"
@@ -978,8 +1022,6 @@
 					<Button size="sm" variant="outline" onclick={handleJsonReset}>Reset</Button>
 					<Button size="sm" onclick={handleJsonApply}>Apply JSON</Button>
 				</div>
-			{:else}
-				<p class="text-xs text-muted-foreground">Graph read-only view</p>
 			{/if}
 		</div>
 
@@ -1115,6 +1157,16 @@
 	</div>
 
 	<!-- Character Editor Modal -->
+	<CharacterManagerDialog
+		open={isCharacterManagerOpen}
+		onClose={() => (isCharacterManagerOpen = false)}
+		characters={$characters}
+		messageCountByCharacter={messageCountByCharacter}
+		onCreate={handleCharacterManagerCreate}
+		onEdit={handleCharacterManagerEdit}
+		onDelete={handleCharacterManagerDelete}
+	/>
+
 	<CharacterEditor
 		character={editingCharacterData}
 		open={$editingCharacter !== null}

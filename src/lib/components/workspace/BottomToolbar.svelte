@@ -59,9 +59,7 @@
 	<div class="flex items-center justify-between">
 		<!-- Left: Selection Info -->
 		<div class="flex items-center gap-3">
-			{#if readOnly}
-				<div class="text-sm text-muted-foreground">View-only graph</div>
-			{:else if selectedElement}
+			{#if selectedElement}
 				<div class="text-sm text-muted-foreground">
 					<span class="font-medium text-foreground">Selected:</span>
 					{selectedElement.startsWith('char') ? 'Character' : 'Message'}

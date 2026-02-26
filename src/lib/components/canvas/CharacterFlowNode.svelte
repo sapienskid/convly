@@ -199,8 +199,6 @@
 						<MessageSquarePlus class="w-3.5 h-3.5" />
 					</Button>
 				</div>
-			{:else}
-				<span class="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">Read only</span>
 			{/if}
 			<div class="text-xs text-muted-foreground font-mono">
 				#{data.character.id.slice(-4)}
