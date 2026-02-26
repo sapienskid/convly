@@ -10,6 +10,10 @@ import {
 } from '$lib/types';
 import { loadFromIndexedDB, saveToIndexedDB } from '$lib/utils/indexedDB';
 import { analyzeMessageFlow } from '$lib/utils/messageFlow';
+import {
+	analyzeConversationQA,
+	type ConversationFixAction
+} from '$lib/utils/conversationQA';
 
 const demoCharacters: Character[] = [
 	{
@@ -618,6 +622,71 @@ export function autoArrangeGraph(options: { force?: boolean } = { force: true })
 	messages.set(arrangedGraph.messages);
 	connections.set(normalizedConnections);
 	return true;
+}
+
+function normalizeCurrentGraph() {
+	const allCharacters = get(characters);
+	const allMessages = get(messages);
+	const allConnections = get(connections);
+	const normalizedConnections = normalizeConnections(
+		allConnections,
+		allCharacters,
+		allMessages
+	);
+	connections.set(normalizedConnections);
+}
+
+export function applyConversationQAFix(action: ConversationFixAction): number {
+	const beforeReport = analyzeConversationQA(
+		get(characters),
+		get(messages),
+		get(connections)
+	);
+	const beforeCount = beforeReport.errorCount + beforeReport.warningCount;
+
+	if (action === 'assign_unassigned_messages') {
+		const allCharacters = get(characters);
+		const fallbackCharacter =
+			allCharacters.length > 0
+				? allCharacters.reduce((best, current) =>
+						current.position.y < best.position.y ? current : best
+					)
+				: null;
+		if (fallbackCharacter) {
+			messages.update((existingMessages) =>
+				existingMessages.map((message) => {
+					if (message.characterId && allCharacters.some((character) => character.id === message.characterId)) {
+						return message;
+					}
+					return { ...message, characterId: fallbackCharacter.id };
+				})
+			);
+		}
+		normalizeCurrentGraph();
+		propagateSpeakerAssignments();
+	} else if (action === 'remove_invalid_replies') {
+		const existingMessageMap = new Map(get(messages).map((message) => [message.id, message]));
+		messages.update((existingMessages) =>
+			existingMessages.map((message) => {
+				if (!message.replyTo) return message;
+				if (message.replyTo === message.id || !existingMessageMap.has(message.replyTo)) {
+					return { ...message, replyTo: undefined };
+				}
+				return message;
+			})
+		);
+		normalizeCurrentGraph();
+	} else if (action === 'repair_assignment_edges' || action === 'dedupe_connections') {
+		normalizeCurrentGraph();
+	}
+
+	const afterReport = analyzeConversationQA(
+		get(characters),
+		get(messages),
+		get(connections)
+	);
+	const afterCount = afterReport.errorCount + afterReport.warningCount;
+	return Math.max(0, beforeCount - afterCount);
 }
 
 export function sendMessageFromPreview(input: {
