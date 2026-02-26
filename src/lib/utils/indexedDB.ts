@@ -6,7 +6,7 @@ import {
 	type CustomizationSettings
 } from '$lib/types';
 
-const DB_NAME = 'convly-db';
+const DB_NAME = 'convly-studio-db';
 const DB_VERSION = 1;
 
 interface ConvlyDB {

@@ -276,7 +276,7 @@
 			.replace(/[^a-z0-9]+/g, '-')
 			.replace(/^-+|-+$/g, '') || 'video';
 		const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-		return `convly-${safeName}-${timestamp}.${format}`;
+		return `convly-studio-${safeName}-${timestamp}.${format}`;
 	}
 
 	type ExportOutputTarget = {
@@ -330,7 +330,7 @@
 			try {
 				// Disk-backed fallback avoids large in-memory mux buffers when save picker is unavailable.
 				const rootDirectory = await storageWithDirectory.getDirectory();
-				const tempFilename = `convly-temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${format}`;
+				const tempFilename = `convly-studio-temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${format}`;
 				const fileHandle = await rootDirectory.getFileHandle(tempFilename, { create: true });
 				const stream = await fileHandle.createWritable();
 				return {
@@ -620,7 +620,7 @@
 			.replace(/[^a-z0-9]+/g, '-')
 			.replace(/^-+|-+$/g, '');
 		link.href = url;
-		link.download = `convly-export-${channelSlug || 'channel'}-${Date.now()}.json`;
+		link.download = `convly-studio-export-${channelSlug || 'channel'}-${Date.now()}.json`;
 		link.click();
 		URL.revokeObjectURL(url);
 	}

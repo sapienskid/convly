@@ -925,7 +925,7 @@ export function downloadVideo(
 ): Promise<void> {
 	const extension = blob.type.includes('mp4') ? 'mp4' : 'webm';
 	const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-	const filename = `convly-${channelName}-${timestamp}.${extension}`;
+	const filename = `convly-studio-${channelName}-${timestamp}.${extension}`;
 	return downloadBlob(blob, filename, options);
 }
 
