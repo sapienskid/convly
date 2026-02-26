@@ -1,5 +1,11 @@
 <script lang="ts">
-	import type { Character, Message, Connection, CustomizationSettings } from '$lib/types';
+	import type {
+		Character,
+		Message,
+		Connection,
+		CustomizationSettings,
+		ChatPlatformSetting
+	} from '$lib/types';
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { Progress } from '$lib/components/ui/progress';
 	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/components/ui/select';
@@ -103,13 +109,68 @@
 		messageContextMenu ? messageMap.get(messageContextMenu.messageId) ?? null : null
 	);
 
-	const backgroundColor = $derived(customizeSettings.backgroundColor || '#1f2933');
-	const primaryColor = $derived(customizeSettings.primaryColor || '#ff6f3b');
-	const textColor = $derived(customizeSettings.textColor || '#f4f6f8');
+	const platformDefaults: Record<
+		ChatPlatformSetting,
+		{ backgroundColor: string; primaryColor: string; textColor: string; fontFamily: string }
+	> = {
+		discord: {
+			backgroundColor: '#1f2933',
+			primaryColor: '#5865f2',
+			textColor: '#f4f6f8',
+			fontFamily: 'Instrument Sans'
+		},
+		whatsapp: {
+			backgroundColor: '#efeae2',
+			primaryColor: '#25d366',
+			textColor: '#111b21',
+			fontFamily: 'Manrope'
+		},
+		messenger: {
+			backgroundColor: '#f5f7fb',
+			primaryColor: '#0084ff',
+			textColor: '#111827',
+			fontFamily: 'Manrope'
+		},
+		telegram: {
+			backgroundColor: '#e8eef7',
+			primaryColor: '#2aabee',
+			textColor: '#17212b',
+			fontFamily: 'Archivo'
+		}
+	};
+	const chatPlatform = $derived(
+		(customizeSettings.chatPlatform ?? 'discord') as ChatPlatformSetting
+	);
+	const platformTheme = $derived(platformDefaults[chatPlatform]);
+	const backgroundColor = $derived(
+		customizeSettings.backgroundColor || platformTheme.backgroundColor
+	);
+	const primaryColor = $derived(customizeSettings.primaryColor || platformTheme.primaryColor);
+	const textColor = $derived(customizeSettings.textColor || platformTheme.textColor);
 	const channelName = $derived(customizeSettings.channelName || 'announcements');
+	const channelPrefix = $derived.by(() => {
+		if (chatPlatform === 'discord') return '#';
+		if (chatPlatform === 'telegram') return '@';
+		return '';
+	});
+	const headerSubtitle = $derived.by(() => {
+		if (chatPlatform === 'discord') return `${characters.length} members`;
+		if (chatPlatform === 'whatsapp') return `${Math.max(characters.length, 2)} participants`;
+		if (chatPlatform === 'messenger') return 'Active now';
+		return `${messages.length} messages`;
+	});
+	const composerPlaceholder = $derived.by(() => {
+		if (chatPlatform === 'messenger') return 'Aa';
+		if (chatPlatform === 'discord') return `Message #${channelName}`;
+		return 'Message';
+	});
+	const isDiscord = $derived(chatPlatform === 'discord');
+	const isWhatsApp = $derived(chatPlatform === 'whatsapp');
+	const isMessenger = $derived(chatPlatform === 'messenger');
+	const isTelegram = $derived(chatPlatform === 'telegram');
 
-	// Adapt foreground colors based on background luminance
-	const adaptedColors = $derived(() => {
+	// Adapt foreground colors based on background luminance.
+	const adaptedColors = $derived.by(() => {
 		const hex = backgroundColor.replace('#', '');
 		const normalized = hex.length === 6 ? hex : '313338';
 		const r = parseInt(normalized.slice(0, 2), 16);
@@ -120,18 +181,19 @@
 		const isDark = luminance < 0.5;
 
 		return {
-			header: isDark ? `${backgroundColor}dd` : `${backgroundColor}ee`,
-			headerBorder: isDark ? `${backgroundColor}44` : `${backgroundColor}66`,
-			hover: isDark ? `${backgroundColor}88` : `${backgroundColor}aa`,
-			input: isDark ? `${backgroundColor}66` : `${backgroundColor}88`,
+			header: isDark ? `${backgroundColor}dd` : '#ffffff',
+			headerBorder: isDark ? '#1f2328' : '#d9dde4',
+			hover: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(2,6,23,0.06)',
+			input: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.96)',
+			inputBorder: isDark ? 'rgba(255,255,255,0.16)' : '#d9dde4',
 			text: isDark ? '#f4f6f8' : '#1f2937',
-			textMuted: isDark ? `${textColor}88` : '#6b7280',
-			textDim: isDark ? `${textColor}66` : '#9ca3af',
-			textFaint: isDark ? `${textColor}50` : '#d1d5db'
+			textMuted: isDark ? '#a9b0bb' : '#6b7280',
+			textDim: isDark ? '#8f99a8' : '#9ca3af',
+			textFaint: isDark ? '#7a8392' : '#c2c8d1'
 		};
 	});
 
-	const fontFamily = $derived(customizeSettings.fontFamily || 'Instrument Sans');
+	const fontFamily = $derived(customizeSettings.fontFamily || platformTheme.fontFamily);
 	const fontFamilyStack = $derived.by(() => {
 		const stacks: Record<string, string> = {
 			'Instrument Sans': "'Instrument Sans', sans-serif",
@@ -148,6 +210,7 @@
 	const messagePadding = $derived(customizeSettings.messagePadding || 16);
 	const showAvatars = $derived(customizeSettings.showAvatars ?? true);
 	const showTimestamps = $derived(customizeSettings.showTimestamps ?? true);
+	const primarySpeakerId = $derived(characters[0]?.id ?? null);
 
 	const fontWeightValue = $derived(
 		fontWeight === 'light'
@@ -298,6 +361,346 @@
 			handleComposerSend();
 		}
 	}
+
+	function formatMessageTimestamp(timestamp: string): string {
+		return new Date(timestamp).toLocaleTimeString([], {
+			hour: 'numeric',
+			minute: '2-digit'
+		});
+	}
+
+	function shouldShowAvatarForMessage(isPrimarySpeaker: boolean, isGrouped: boolean): boolean {
+		if (!showAvatars || isGrouped) return false;
+		if (chatPlatform === 'discord') return true;
+		if (chatPlatform === 'whatsapp') return false;
+		return !isPrimarySpeaker;
+	}
+
+	function shouldShowAuthorForMessage(isPrimarySpeaker: boolean, isGrouped: boolean): boolean {
+		if (chatPlatform === 'discord') return !isGrouped;
+		if (isGrouped) return false;
+		return !isPrimarySpeaker;
+	}
+
+	function shouldShowHeaderTimestamp(isGrouped: boolean): boolean {
+		return showTimestamps && chatPlatform === 'discord' && !isGrouped;
+	}
+
+	function shouldShowFloatingTimestamp(isGrouped: boolean): boolean {
+		return showTimestamps && chatPlatform === 'discord' && isGrouped;
+	}
+
+	function shouldShowBubbleTimestamp(): boolean {
+		return showTimestamps && chatPlatform !== 'discord';
+	}
+
+	function getStatusBarStyle(): string {
+		if (chatPlatform === 'whatsapp') {
+			return 'background-color: #054d44;';
+		}
+		if (chatPlatform === 'messenger') {
+			return 'background-color: #ffffff;';
+		}
+		if (chatPlatform === 'telegram') {
+			return 'background-color: #3f6f99;';
+		}
+		return 'background-color: #111214;';
+	}
+
+	function getStatusBarTextStyle(): string {
+		if (chatPlatform === 'messenger') {
+			return 'color: #111827;';
+		}
+		return 'color: #f8fafc;';
+	}
+
+	function getHeaderContainerStyle(): string {
+		if (chatPlatform === 'whatsapp') {
+			return 'background-color: #075e54; border-bottom-color: #0e6b61;';
+		}
+		if (chatPlatform === 'messenger') {
+			return 'background-color: #ffffff; border-bottom-color: #dbe2ef;';
+		}
+		if (chatPlatform === 'telegram') {
+			return 'background-color: #4f7ea8; border-bottom-color: #3f6f99;';
+		}
+		return 'background-color: #1e1f22; border-bottom-color: #111214;';
+	}
+
+	function getHeaderTextStyle(): string {
+		if (chatPlatform === 'whatsapp' || chatPlatform === 'telegram') {
+			return 'color: #f8fafc;';
+		}
+		if (chatPlatform === 'messenger') {
+			return 'color: #111827;';
+		}
+		return 'color: #f2f3f5;';
+	}
+
+	function getHeaderSubtitleStyle(): string {
+		if (chatPlatform === 'whatsapp' || chatPlatform === 'telegram') {
+			return 'color: rgba(248, 250, 252, 0.78);';
+		}
+		if (chatPlatform === 'messenger') {
+			return 'color: #6b7280;';
+		}
+		return 'color: #b5bac1;';
+	}
+
+	function getHeaderIconStyle(): string {
+		if (chatPlatform === 'whatsapp' || chatPlatform === 'telegram') {
+			return 'color: #e2f2f0;';
+		}
+		if (chatPlatform === 'messenger') {
+			return 'color: #4b5563;';
+		}
+		return 'color: #b5bac1;';
+	}
+
+	function getHeaderBadgeStyle(): string {
+		if (chatPlatform === 'whatsapp' || chatPlatform === 'telegram') {
+			return 'background-color: rgba(255,255,255,0.16); color: #f8fafc;';
+		}
+		if (chatPlatform === 'messenger') {
+			return 'background-color: #eef2ff; color: #2563eb;';
+		}
+		return 'background-color: #2b2d31; color: #f2f3f5;';
+	}
+
+	function getMessagesPaneStyle(): string {
+		if (chatPlatform === 'whatsapp') {
+			return 'background-color: #e5ddd5; background-image: radial-gradient(rgba(17, 27, 33, 0.08) 0.8px, transparent 0.8px); background-size: 16px 16px;';
+		}
+		if (chatPlatform === 'telegram') {
+			return 'background-color: #d7e7f5; background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.35) 25%, rgba(255, 255, 255, 0) 25%), linear-gradient(225deg, rgba(255, 255, 255, 0.35) 25%, rgba(255, 255, 255, 0) 25%); background-size: 24px 24px; background-position: 0 0, 12px 12px;';
+		}
+		if (chatPlatform === 'messenger') {
+			return 'background-color: #f3f5fb;';
+		}
+		return `background-color: ${backgroundColor};`;
+	}
+
+	function getMessageRowClass(isPrimarySpeaker: boolean): string {
+		const outgoingClass = chatPlatform !== 'discord' && isPrimarySpeaker ? 'justify-end' : '';
+		const hoverClass = chatPlatform === 'discord' ? 'hover:bg-white/5' : 'hover:bg-black/[0.04]';
+		const interactiveClass = canCompose ? 'cursor-pointer' : '';
+		return `flex items-start gap-2 rounded-md border transition-colors ${outgoingClass} ${hoverClass} ${interactiveClass}`;
+	}
+
+	function getMessageRowStyle(messageId: string): string {
+		const isSelected = replyTargetId === messageId;
+		if (!isSelected) {
+			return `padding: ${messagePadding / 4}px ${messagePadding / 2}px; border-color: transparent;`;
+		}
+		const ringColor =
+			chatPlatform === 'discord' ? 'rgba(88, 101, 242, 0.48)' : 'rgba(42, 171, 238, 0.42)';
+		const selectedBg =
+			chatPlatform === 'discord' ? 'rgba(88, 101, 242, 0.18)' : 'rgba(42, 171, 238, 0.12)';
+		return `padding: ${messagePadding / 4}px ${messagePadding / 2}px; border-color: ${ringColor}; background-color: ${selectedBg};`;
+	}
+
+	function getMessageContentStyle(isPrimarySpeaker: boolean): string {
+		if (chatPlatform === 'discord') {
+			return 'flex: 1; min-width: 0;';
+		}
+		return `min-width: 0; max-width: 82%; display: flex; flex-direction: column; align-items: ${isPrimarySpeaker ? 'flex-end' : 'flex-start'};`;
+	}
+
+	function getAuthorNameStyle(
+		roleColor: string,
+		isPrimarySpeaker: boolean
+	): string {
+		if (chatPlatform === 'discord') {
+			return `color: ${roleColor}; font-size: ${fontSize}px; font-weight: ${fontWeightValue};`;
+		}
+		if (isPrimarySpeaker) {
+			return 'color: transparent;';
+		}
+		return `color: ${roleColor}; font-size: 11px; font-weight: 600;`;
+	}
+
+	function getHeaderTimestampStyle(): string {
+		return 'color: #8d93a0;';
+	}
+
+	function getFloatingTimestampStyle(): string {
+		return 'color: #8d93a0;';
+	}
+
+	function getReplyPreviewContainerStyle(
+		isPrimarySpeaker: boolean,
+		replyColor: string
+	): string {
+		if (chatPlatform === 'discord') {
+			return `border-left: 4px solid ${replyColor}; background: linear-gradient(90deg, ${replyColor}1f 0%, rgba(79, 84, 92, 0.06) 100%);`;
+		}
+		if (chatPlatform === 'whatsapp') {
+			return `border-left: 3px solid ${replyColor}; background-color: ${isPrimarySpeaker ? 'rgba(0, 168, 132, 0.14)' : 'rgba(17, 27, 33, 0.08)'};`;
+		}
+		if (chatPlatform === 'messenger') {
+			return `border-left: 3px solid ${replyColor}; background-color: ${isPrimarySpeaker ? 'rgba(0, 132, 255, 0.16)' : 'rgba(17, 24, 39, 0.08)'};`;
+		}
+		return `border-left: 3px solid ${replyColor}; background-color: ${isPrimarySpeaker ? 'rgba(42, 171, 238, 0.16)' : 'rgba(23, 33, 43, 0.08)'};`;
+	}
+
+	function getReplyPreviewTextStyle(): string {
+		if (chatPlatform === 'discord') {
+			return `color: ${textColor}cc;`;
+		}
+		if (chatPlatform === 'whatsapp') {
+			return 'color: #5f6d79;';
+		}
+		if (chatPlatform === 'messenger') {
+			return 'color: #64748b;';
+		}
+		return 'color: #5e748a;';
+	}
+
+	function getMessageBodyStyle(isPrimarySpeaker: boolean): string {
+		const base = `font-size: ${fontSize}px; font-weight: ${fontWeightValue}; line-height: 1.45;`;
+		if (chatPlatform === 'discord') {
+			return `color: #dcddde; ${base} padding: ${messagePadding / 8}px 0; display: block; width: 100%;`;
+		}
+
+		if (chatPlatform === 'whatsapp') {
+			const bubbleColor = isPrimarySpeaker ? '#d9fdd3' : '#ffffff';
+			const radius = isPrimarySpeaker ? '14px 6px 14px 14px' : '6px 14px 14px 14px';
+			return `color: #111b21; ${base} background-color: ${bubbleColor}; border-radius: ${radius}; border: 1px solid rgba(15, 23, 42, 0.08); padding: ${Math.round(messagePadding / 2)}px ${Math.round(messagePadding * 0.75)}px; display: inline-block; max-width: 100%; box-shadow: 0 1px 0 rgba(17, 27, 33, 0.06);`;
+		}
+
+		if (chatPlatform === 'messenger') {
+			const bubbleBackground = isPrimarySpeaker
+				? 'linear-gradient(145deg, #1298ff, #006aff)'
+				: '#e8ecf3';
+			const bubbleText = isPrimarySpeaker ? '#ffffff' : '#111827';
+			const radius = isPrimarySpeaker ? '18px 18px 6px 18px' : '18px 18px 18px 6px';
+			return `color: ${bubbleText}; ${base} background: ${bubbleBackground}; border-radius: ${radius}; border: 1px solid ${isPrimarySpeaker ? 'transparent' : '#dde3ee'}; padding: ${Math.round(messagePadding / 2)}px ${Math.round(messagePadding * 0.75)}px; display: inline-block; max-width: 100%;`;
+		}
+
+		const bubbleColor = isPrimarySpeaker ? '#e7f3ff' : '#ffffff';
+		const radius = isPrimarySpeaker ? '14px 14px 6px 14px' : '14px 14px 14px 6px';
+		return `color: #17212b; ${base} background-color: ${bubbleColor}; border-radius: ${radius}; border: 1px solid rgba(42, 171, 238, 0.24); padding: ${Math.round(messagePadding / 2)}px ${Math.round(messagePadding * 0.75)}px; display: inline-block; max-width: 100%;`;
+	}
+
+	function getBubbleTimestampStyle(isPrimarySpeaker: boolean): string {
+		if (chatPlatform === 'whatsapp') {
+			return `color: ${isPrimarySpeaker ? '#667781' : '#7d8c99'};`;
+		}
+		if (chatPlatform === 'messenger') {
+			return `color: ${isPrimarySpeaker ? 'rgba(255,255,255,0.78)' : '#7b8593'};`;
+		}
+		return 'color: #708397;';
+	}
+
+	function getTypingBubbleStyle(): string {
+		if (chatPlatform === 'discord') {
+			return 'background-color: #383a40;';
+		}
+		if (chatPlatform === 'whatsapp') {
+			return 'background-color: #ffffff; border: 1px solid #dfe5ec;';
+		}
+		if (chatPlatform === 'messenger') {
+			return 'background-color: #e8ecf3;';
+		}
+		return 'background-color: #ffffff; border: 1px solid #d2dce9;';
+	}
+
+	function getTypingDotStyle(): string {
+		if (chatPlatform === 'discord') return 'background-color: #bcc3ce;';
+		if (chatPlatform === 'messenger') return 'background-color: #708397;';
+		return 'background-color: #7d8c99;';
+	}
+
+	function getComposerBarStyle(): string {
+		if (chatPlatform === 'whatsapp') {
+			return 'background-color: #f0f2f5; border-top-color: #d9dce2;';
+		}
+		if (chatPlatform === 'messenger') {
+			return 'background-color: #ffffff; border-top-color: #dbe2ef;';
+		}
+		if (chatPlatform === 'telegram') {
+			return 'background-color: #f3f5f7; border-top-color: #d2d8df;';
+		}
+		return 'background-color: #232428; border-top-color: #111214;';
+	}
+
+	function getReplyChipStyle(): string {
+		if (chatPlatform === 'discord') {
+			return 'border-color: #45484f; background-color: #2f3136; color: #f2f3f5;';
+		}
+		if (chatPlatform === 'whatsapp') {
+			return 'border-color: #cfd6df; background-color: #ffffff; color: #111b21;';
+		}
+		if (chatPlatform === 'messenger') {
+			return 'border-color: #dbe2ef; background-color: #f7f9fd; color: #111827;';
+		}
+		return 'border-color: #cfd8e3; background-color: #ffffff; color: #17212b;';
+	}
+
+	function getComposerShellStyle(): string {
+		if (chatPlatform === 'discord') {
+			return 'background-color: #383a40; border: 1px solid transparent;';
+		}
+		if (chatPlatform === 'whatsapp') {
+			return 'background-color: #ffffff; border: 1px solid #d9dfe8;';
+		}
+		if (chatPlatform === 'messenger') {
+			return 'background-color: #f3f5fa; border: 1px solid #e1e7f1;';
+		}
+		return 'background-color: #ffffff; border: 1px solid #d5deea;';
+	}
+
+	function getSpeakerTriggerStyle(): string {
+		if (chatPlatform === 'discord') {
+			return 'color: #f2f3f5;';
+		}
+		return 'color: #1f2937;';
+	}
+
+	function getSpeakerContentClass(): string {
+		if (chatPlatform === 'discord') {
+			return 'border-[#2b2d31] bg-[#111214] text-[#f2f3f5]';
+		}
+		return 'border-border bg-popover text-popover-foreground';
+	}
+
+	function getComposerInputStyle(): string {
+		if (chatPlatform === 'discord') {
+			return 'color: #f2f3f5;';
+		}
+		if (chatPlatform === 'whatsapp') {
+			return 'color: #111b21;';
+		}
+		if (chatPlatform === 'messenger') {
+			return 'color: #111827;';
+		}
+		return 'color: #17212b;';
+	}
+
+	function getComposerPlaceholderStyle(): string {
+		if (chatPlatform === 'discord') return 'color: #8d93a0;';
+		return 'color: #7c8794;';
+	}
+
+	function getSendButtonStyle(): string {
+		if (chatPlatform === 'discord') {
+			return `background-color: ${primaryColor}; color: #ffffff;`;
+		}
+		if (chatPlatform === 'messenger') {
+			return 'background: linear-gradient(145deg, #1298ff, #006aff); color: #ffffff; min-width: 2rem; height: 2rem; border-radius: 999px;';
+		}
+		if (chatPlatform === 'whatsapp') {
+			return 'background-color: #00a884; color: #ffffff; min-width: 2rem; height: 2rem; border-radius: 999px;';
+		}
+		return 'background-color: #2aabee; color: #ffffff; min-width: 2rem; height: 2rem; border-radius: 999px;';
+	}
+
+	function getPassiveComposerShellStyle(): string {
+		if (chatPlatform === 'discord') {
+			return 'background-color: #383a40;';
+		}
+		return 'background-color: #ffffff; border: 1px solid #d9dfe8;';
+	}
 </script>
 
 <svelte:window onclick={handleGlobalPointerDown} onkeydown={handleGlobalKeyDown} />
@@ -311,16 +714,19 @@
 			data-export-capture="screen"
 		>
 			<!-- Status Bar -->
-			<div class="bg-foreground h-6 flex items-center justify-between px-6 text-background text-xs">
+			<div
+				class="h-6 flex items-center justify-between px-6 text-xs"
+				style={`${getStatusBarStyle()} ${getStatusBarTextStyle()}`}
+			>
 				<span>9:41</span>
 				<div class="flex items-center space-x-1">
 					<div class="flex space-x-1">
-						<div class="w-1 h-1 bg-background rounded-full"></div>
-						<div class="w-1 h-1 bg-background rounded-full"></div>
-						<div class="w-1 h-1 bg-background rounded-full opacity-30"></div>
+						<div class="w-1 h-1 rounded-full" style={getStatusBarTextStyle()}></div>
+						<div class="w-1 h-1 rounded-full" style={getStatusBarTextStyle()}></div>
+						<div class="w-1 h-1 rounded-full opacity-30" style={getStatusBarTextStyle()}></div>
 					</div>
-					<div class="w-6 h-3 border border-background rounded-sm">
-						<div class="w-4 h-1.5 bg-background rounded-sm m-0.5"></div>
+					<div class="w-6 h-3 border rounded-sm" style={getStatusBarTextStyle()}>
+						<div class="w-4 h-1.5 rounded-sm m-0.5" style={getStatusBarTextStyle()}></div>
 					</div>
 				</div>
 			</div>
@@ -328,63 +734,75 @@
 			<!-- Content -->
 			<div class="h-[calc(100%-24px)]" data-export-capture="app-content">
 				{#if previewState === 'preview' || previewState === 'video'}
-					<!-- Discord Chat UI -->
-					<div class="h-full flex flex-col" style="background-color: {backgroundColor}; font-family: {fontFamilyStack};">
-						<!-- Discord Mobile Header -->
-						<div
-							class="px-3 py-2 border-b flex items-center justify-between flex-shrink-0 shadow-sm backdrop-blur-sm"
-							style="background-color: {adaptedColors().header}; border-bottom-color: {adaptedColors().headerBorder}"
-						>
-							<div class="flex items-center flex-1 min-w-0">
-								<!-- Channel Icon & Name -->
+						<!-- Chat Preview -->
+						<div class="h-full flex flex-col" style="background-color: {backgroundColor}; font-family: {fontFamilyStack};">
+							<!-- Chat Header -->
+							<div
+								class="px-3 py-2 border-b flex items-center justify-between flex-shrink-0 shadow-sm backdrop-blur-sm"
+								style={getHeaderContainerStyle()}
+							>
 								<div class="flex items-center gap-2 flex-1 min-w-0">
 									<div
-										class="w-6 h-6 rounded flex items-center justify-center flex-shrink-0"
-										style="background-color: {adaptedColors().hover}"
+										class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+										style={getHeaderBadgeStyle()}
 									>
-										<span class="text-xs font-semibold" style="color: {adaptedColors().text}">#</span>
+										<span class="text-xs font-semibold">{channelPrefix || '@'}</span>
 									</div>
-									<div class="flex-1 min-w-0">
-										<div class="text-sm font-semibold truncate" style="color: {adaptedColors().text}">
-											{channelName}
+									<div class="flex-1 min-w-0 leading-tight">
+										<div class="text-sm font-semibold truncate" style={getHeaderTextStyle()}>
+											{channelPrefix}{channelName}
+										</div>
+										<div class="text-[10px] truncate" style={getHeaderSubtitleStyle()}>
+											{headerSubtitle}
 										</div>
 									</div>
 								</div>
-								<!-- Right Icons -->
-								<div class="flex items-center gap-4 ml-2">
-									<!-- Voice Call -->
-									<svg class="w-5 h-5" style="color: {textColor}cc" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+								<div class="flex items-center gap-3 ml-2">
+									{#if isTelegram}
+										<svg class="w-[18px] h-[18px]" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h10M11 12h7m-7 7h10M4 6h.01M4 12h.01M4 18h.01"/>
+										</svg>
+									{/if}
+									{#if !isTelegram}
+										<svg class="w-5 h-5" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+										</svg>
+									{/if}
+									<svg class="w-5 h-5" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										{#if isMessenger}
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+										{:else}
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+										{/if}
 									</svg>
-									<!-- Video Call -->
-									<svg class="w-5 h-5" style="color: {textColor}cc" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-									</svg>
-									<!-- More Options -->
-									<svg class="w-5 h-5" style="color: {textColor}cc" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<svg class="w-5 h-5" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
 									</svg>
 								</div>
 							</div>
-						</div>
 
 						<!-- Messages Area -->
-						<div class="flex-1 overflow-y-auto px-1 py-4" bind:this={messagesViewport}>
-							<div style="gap: {messageSpacing}px; display: flex; flex-direction: column; text-align: left; font-weight: {fontWeightValue};">
+						<div
+							class="flex-1 overflow-y-auto px-1 py-4"
+							bind:this={messagesViewport}
+							style={getMessagesPaneStyle()}
+						>
+							<div
+								style="gap: {messageSpacing}px; display: flex; flex-direction: column; text-align: left; font-weight: {fontWeightValue};"
+							>
 								{#if renderedMessages.length === 0}
-									<!-- Welcome Message -->
 									<div class="flex flex-col items-center justify-center py-8 text-center">
 										<div
 											class="w-16 h-16 rounded-full flex items-center justify-center mb-4"
-											style="background-color: {adaptedColors().hover}"
+											style={getHeaderBadgeStyle()}
 										>
-											<span class="text-2xl font-bold" style="color: {adaptedColors().textMuted}">#</span>
+											<span class="text-2xl font-bold">{channelPrefix || '@'}</span>
 										</div>
-										<div class="text-base font-semibold mb-1" style="color: {adaptedColors().text}">
-											Welcome to #{channelName}!
+										<div class="text-base font-semibold mb-1" style={getHeaderTextStyle()}>
+											Welcome to {channelPrefix}{channelName}
 										</div>
-										<div class="text-xs px-6" style="color: {adaptedColors().textDim}">
-											This is the beginning of the #{channelName} channel.
+										<div class="text-xs px-6" style={getHeaderSubtitleStyle()}>
+											Send your first message from the composer below.
 										</div>
 									</div>
 								{:else}
@@ -405,166 +823,100 @@
 										{@const replyCharacter = replyMessage?.characterId ? characterMap.get(replyMessage.characterId) : undefined}
 										{@const replyText = replyMessage ? visibleMessageTextById.get(replyMessage.id) ?? replyMessage.text : ''}
 										{@const replyPreview = replyText.length > 90 ? `${replyText.slice(0, 87)}...` : replyText}
+										{@const isPrimarySpeaker = message.characterId === primarySpeakerId}
 
-										{#if !isGrouped}
-											<div
-												class="flex items-start gap-3 rounded transition-colors {canCompose ? 'cursor-pointer hover:bg-white/5' : 'hover:bg-white/5'} {replyTargetId === message.id ? 'ring-1 ring-primary/40 bg-white/5' : ''}"
-												style="padding: {messagePadding / 4}px {messagePadding / 2}px;"
-												role="button"
-												tabindex={canCompose ? 0 : -1}
-												aria-pressed={canCompose ? replyTargetId === message.id : undefined}
-												onclick={() => toggleReplyTarget(message.id)}
-												onkeydown={(event) => handleMessageRowKeyDown(event, message.id)}
-												oncontextmenu={(event) => openMessageContextMenu(event, message.id)}
-											>
-												{#if showAvatars}
-													<Avatar class="w-10 h-10 flex-shrink-0 mt-0.5" style="border-radius: 50%; overflow: hidden;">
-														<AvatarImage src={displayCharacter.avatar} alt={displayCharacter.username} style="border-radius: 50%; width: 100%; height: 100%; object-fit: cover;" />
-														<AvatarFallback
-															class="text-white text-xs font-semibold"
-															style="background-color: {displayCharacter.roleColor}; border-radius: 50%; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"
-														>
-															{displayCharacter.username.slice(0, 2).toUpperCase()}
-														</AvatarFallback>
-													</Avatar>
-												{/if}
+										<div
+											class={getMessageRowClass(isPrimarySpeaker)}
+											style={getMessageRowStyle(message.id)}
+											role="button"
+											tabindex={canCompose ? 0 : -1}
+											aria-pressed={canCompose ? replyTargetId === message.id : undefined}
+											onclick={() => toggleReplyTarget(message.id)}
+											onkeydown={(event) => handleMessageRowKeyDown(event, message.id)}
+											oncontextmenu={(event) => openMessageContextMenu(event, message.id)}
+										>
+											{#if shouldShowAvatarForMessage(isPrimarySpeaker, isGrouped)}
+												<Avatar class="w-9 h-9 flex-shrink-0 mt-0.5" style="border-radius: 50%; overflow: hidden;">
+													<AvatarImage src={displayCharacter.avatar} alt={displayCharacter.username} style="border-radius: 50%; width: 100%; height: 100%; object-fit: cover;" />
+													<AvatarFallback
+														class="text-white text-xs font-semibold"
+														style="background-color: {displayCharacter.roleColor}; border-radius: 50%; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"
+													>
+														{displayCharacter.username.slice(0, 2).toUpperCase()}
+													</AvatarFallback>
+												</Avatar>
+											{:else if shouldShowFloatingTimestamp(isGrouped)}
+												<div class="w-9 flex-shrink-0 flex items-center justify-end">
+													<span class="text-[10px] font-medium" style={getFloatingTimestampStyle()}>
+														{formatMessageTimestamp(message.timestamp)}
+													</span>
+												</div>
+											{/if}
 
-												<div class="flex-1 min-w-0" style="margin-left: {showAvatars ? '0' : '0'}">
-													<div class="flex items-baseline gap-2 mb-0.5">
-														<span style="color: {character ? displayCharacter.roleColor : '#99aab5'}; font-size: {fontSize}px; font-weight: {fontWeightValue};">
+											<div style={getMessageContentStyle(isPrimarySpeaker)}>
+												{#if shouldShowAuthorForMessage(isPrimarySpeaker, isGrouped)}
+													<div class="flex items-baseline gap-1.5 mb-0.5">
+														<span style={getAuthorNameStyle(character ? displayCharacter.roleColor : '#99aab5', isPrimarySpeaker)}>
 															{displayCharacter.username}
 														</span>
-														{#if !character}
-															<span class="text-xs px-1.5 py-0.5 rounded" style="background-color: {adaptedColors().hover}; color: {adaptedColors().textMuted}">
-																Unassigned
+														{#if shouldShowHeaderTimestamp(isGrouped)}
+															<span class="text-[10px] font-medium" style={getHeaderTimestampStyle()}>
+																{formatMessageTimestamp(message.timestamp)}
 															</span>
 														{/if}
-														{#if showTimestamps}
-															<span class="text-xs font-medium" style="color: {adaptedColors().textFaint}">
-																{new Date(message.timestamp).toLocaleTimeString([], {
-																	hour: 'numeric',
-																	minute: '2-digit'
-																})}
-															</span>
-														{/if}
-													</div>
-
-													{#if replyMessage}
-														<div
-															class="mb-2 rounded-md border-l-[4px] pl-3 pr-3 py-2 cursor-pointer hover:bg-black/10 transition-all"
-															style="
-																border-color: {replyCharacter ? replyCharacter.roleColor : '#4f545c'};
-																background: linear-gradient(90deg, {replyCharacter ? `${replyCharacter.roleColor}15` : 'rgba(79, 84, 92, 0.15)'} 0%, rgba(79, 84, 92, 0.05) 100%);
-															"
-														>
-															<div class="flex items-start gap-2">
-																<svg class="w-3.5 h-3.5 shrink-0 mt-0.5 opacity-70" style="color: {replyCharacter ? replyCharacter.roleColor : '#b9bbbe'}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
-																	<path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-																</svg>
-																<div class="flex-1 min-w-0">
-																	<div class="flex items-center gap-1.5 mb-0.5">
-																		<div
-																			class="font-bold text-[0.7rem] tracking-tight"
-																			style="color: {replyCharacter ? replyCharacter.roleColor : '#e3e5e8'}"
-																		>
-																			{replyCharacter ? replyCharacter.username : 'Unknown User'}
-																		</div>
-																		<svg class="w-3 h-3 opacity-50" style="color: {textColor}" fill="currentColor" viewBox="0 0 20 20">
-																			<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-																		</svg>
-																	</div>
-																	<div class="text-[0.7rem] leading-relaxed font-medium" style="color: {textColor}cc">
-																		{replyPreview || 'Click to see original message'}
-																	</div>
-																</div>
-															</div>
-														</div>
-													{/if}
-
-													<div
-														class="leading-relaxed break-words"
-														style="color: {textColor}e6; font-size: {fontSize}px; font-weight: {fontWeightValue}; padding: {messagePadding / 8}px 0;"
-														>
-															{rendered.text}
-															{#if rendered.isTyping}
-																<span class="inline-block ml-0.5 h-[1em] align-[-0.1em] w-[1px]" style="background-color: {textColor}b3; opacity: {Math.abs(Math.cos(currentTime * Math.PI * 3))};"></span>
-															{/if}
-														</div>
-												</div>
-											</div>
-										{:else}
-											<div
-												class="flex items-start gap-3 rounded transition-colors group {canCompose ? 'cursor-pointer hover:bg-white/5' : 'hover:bg-white/5'} {replyTargetId === message.id ? 'ring-1 ring-primary/40 bg-white/5' : ''}"
-												style="padding: {messagePadding / 4}px {messagePadding / 2}px;"
-												role="button"
-												tabindex={canCompose ? 0 : -1}
-												aria-pressed={canCompose ? replyTargetId === message.id : undefined}
-												onclick={() => toggleReplyTarget(message.id)}
-												onkeydown={(event) => handleMessageRowKeyDown(event, message.id)}
-												oncontextmenu={(event) => openMessageContextMenu(event, message.id)}
-											>
-												{#if showAvatars && showTimestamps}
-													<div class="w-10 flex-shrink-0 flex items-center justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-														<span class="text-[10px] font-medium" style="color: {textColor}40">
-															{new Date(message.timestamp).toLocaleTimeString([], {
-																hour: 'numeric',
-																minute: '2-digit'
-															})}
-														</span>
 													</div>
 												{/if}
 
-												<div class="flex-1 min-w-0" style="margin-left: {showAvatars ? '0' : '0'}">
-													{#if replyMessage}
-														<div
-															class="mb-2 rounded-md border-l-[4px] pl-3 pr-3 py-2 cursor-pointer hover:bg-black/10 transition-all"
-															style="
-																border-color: {replyCharacter ? replyCharacter.roleColor : '#4f545c'};
-																background: linear-gradient(90deg, {replyCharacter ? `${replyCharacter.roleColor}15` : 'rgba(79, 84, 92, 0.15)'} 0%, rgba(79, 84, 92, 0.05) 100%);
-															"
-														>
-															<div class="flex items-start gap-2">
-																<svg class="w-3.5 h-3.5 shrink-0 mt-0.5 opacity-70" style="color: {replyCharacter ? replyCharacter.roleColor : '#b9bbbe'}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
-																	<path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-																</svg>
-																<div class="flex-1 min-w-0">
-																	<div class="flex items-center gap-1.5 mb-0.5">
-																		<div
-																			class="font-bold text-[0.7rem] tracking-tight"
-																			style="color: {replyCharacter ? replyCharacter.roleColor : '#e3e5e8'}"
-																		>
-																			{replyCharacter ? replyCharacter.username : 'Unknown User'}
-																		</div>
-																		<svg class="w-3 h-3 opacity-50" style="color: {textColor}" fill="currentColor" viewBox="0 0 20 20">
-																			<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-																		</svg>
-																	</div>
-																	<div class="text-[0.7rem] leading-relaxed font-medium" style="color: {textColor}cc">
-																		{replyPreview || 'Click to see original message'}
-																	</div>
+												{#if replyMessage}
+													<div
+														class="mb-2 rounded-md pl-3 pr-3 py-2 cursor-pointer transition-colors hover:bg-black/10"
+														style={getReplyPreviewContainerStyle(
+															isPrimarySpeaker,
+															replyCharacter ? replyCharacter.roleColor : '#4f545c'
+														)}
+													>
+														<div class="flex items-start gap-2">
+															<svg class="w-3.5 h-3.5 shrink-0 mt-0.5 opacity-70" style="color: {replyCharacter ? replyCharacter.roleColor : '#9ca3af'}" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2">
+																<path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+															</svg>
+															<div class="flex-1 min-w-0">
+																<div
+																	class="font-bold text-[0.7rem] tracking-tight mb-0.5"
+																	style="color: {replyCharacter ? replyCharacter.roleColor : '#9ca3af'}"
+																>
+																	{replyCharacter ? replyCharacter.username : 'Unknown User'}
+																</div>
+																<div class="text-[0.7rem] leading-relaxed font-medium" style={getReplyPreviewTextStyle()}>
+																	{replyPreview || 'Original message'}
 																</div>
 															</div>
 														</div>
-													{/if}
+													</div>
+												{/if}
 
-													<div
-														class="leading-relaxed break-words"
-														style="color: {textColor}e6; font-size: {fontSize}px; font-weight: {fontWeightValue}; padding: {messagePadding / 8}px 0;"
-														>
-															{rendered.text}
-															{#if rendered.isTyping}
-																<span class="inline-block ml-0.5 h-[1em] align-[-0.1em] w-[1px]" style="background-color: {textColor}b3; opacity: {Math.abs(Math.cos(currentTime * Math.PI * 3))};"></span>
-															{/if}
+												<div class="leading-relaxed break-words" style={getMessageBodyStyle(isPrimarySpeaker)}>
+													{rendered.text}
+													{#if rendered.isTyping}
+														<span class="inline-block ml-0.5 h-[1em] align-[-0.1em] w-[1px]" style="background-color: currentColor; opacity: {Math.abs(Math.cos(currentTime * Math.PI * 3))};"></span>
+													{/if}
+													{#if shouldShowBubbleTimestamp()}
+														<div class="mt-1 text-[10px] leading-none text-right" style={getBubbleTimestampStyle(isPrimarySpeaker)}>
+															{formatMessageTimestamp(message.timestamp)}
 														</div>
+													{/if}
 												</div>
 											</div>
-										{/if}
+										</div>
 									{/each}
 
 									{#if typingIndicatorCharacter}
-										<div class="flex items-end gap-3" style="padding: {messagePadding / 4}px {messagePadding / 2}px;">
-											{#if showAvatars}
-												<Avatar class="w-10 h-10 flex-shrink-0 mt-0.5" style="border-radius: 50%; overflow: hidden;">
+										{@const typingIsPrimary = typingIndicatorCharacter.id === primarySpeakerId}
+										<div
+											class="flex items-end gap-2 {chatPlatform !== 'discord' && typingIsPrimary ? 'justify-end' : ''}"
+											style="padding: {messagePadding / 4}px {messagePadding / 2}px;"
+										>
+											{#if shouldShowAvatarForMessage(typingIsPrimary, false)}
+												<Avatar class="w-9 h-9 flex-shrink-0 mt-0.5" style="border-radius: 50%; overflow: hidden;">
 													<AvatarImage src={typingIndicatorCharacter.avatar} alt={typingIndicatorCharacter.username} style="border-radius: 50%; width: 100%; height: 100%; object-fit: cover;" />
 													<AvatarFallback
 														class="text-white text-xs font-semibold"
@@ -573,35 +925,35 @@
 														{typingIndicatorCharacter.username.slice(0, 2).toUpperCase()}
 													</AvatarFallback>
 												</Avatar>
-												{/if}
-												<div class="rounded-2xl px-3 py-2 inline-flex items-center gap-1.5" style="background-color: {adaptedColors().input}">
-													<span class="h-1.5 w-1.5 rounded-full" style="background-color: {textColor}99; transform: translateY({Math.sin((currentTime * 8) + 0) * -2.5 + 1.25}px);"></span>
-													<span class="h-1.5 w-1.5 rounded-full" style="background-color: {textColor}99; transform: translateY({Math.sin((currentTime * 8) - 1.5) * -2.5 + 1.25}px);"></span>
-													<span class="h-1.5 w-1.5 rounded-full" style="background-color: {textColor}99; transform: translateY({Math.sin((currentTime * 8) - 3.0) * -2.5 + 1.25}px);"></span>
-												</div>
+											{/if}
+											<div class="rounded-2xl px-3 py-2 inline-flex items-center gap-1.5" style={getTypingBubbleStyle()}>
+												<span class="h-1.5 w-1.5 rounded-full" style={`${getTypingDotStyle()} transform: translateY(${Math.sin((currentTime * 8) + 0) * -2.5 + 1.25}px);`}></span>
+												<span class="h-1.5 w-1.5 rounded-full" style={`${getTypingDotStyle()} transform: translateY(${Math.sin((currentTime * 8) - 1.5) * -2.5 + 1.25}px);`}></span>
+												<span class="h-1.5 w-1.5 rounded-full" style={`${getTypingDotStyle()} transform: translateY(${Math.sin((currentTime * 8) - 3.0) * -2.5 + 1.25}px);`}></span>
 											</div>
+										</div>
 									{/if}
 								{/if}
 							</div>
 						</div>
 
-						<!-- Discord Mobile Input Bar -->
+						<!-- Composer -->
 						<div
 							class="px-3 py-2 border-t flex-shrink-0 backdrop-blur-sm"
-							style="background-color: {adaptedColors().header}; border-top-color: {adaptedColors().headerBorder}"
+							style={getComposerBarStyle()}
 						>
 							{#if canCompose}
 								{#if replyTargetMessage}
 									<div
 										class="mb-2 flex items-center justify-between rounded-lg border px-2 py-1.5 text-xs"
-										style="border-color: {adaptedColors().headerBorder}; background-color: {adaptedColors().input}"
+										style={getReplyChipStyle()}
 									>
-										<div class="truncate" style="color: {adaptedColors().text}">
+										<div class="truncate">
 											Replying to {characterMap.get(replyTargetMessage.characterId ?? '')?.username ?? 'Unknown'}
 										</div>
 										<button
 											class="ml-2 shrink-0 rounded px-1 text-xs font-semibold"
-											style="color: {adaptedColors().textMuted}"
+											style={getHeaderSubtitleStyle()}
 											onclick={() => (replyTargetId = null)}
 											type="button"
 										>
@@ -610,8 +962,8 @@
 									</div>
 								{/if}
 								<div
-									class="flex items-center gap-1.5 rounded-xl px-2 py-1.5"
-									style="background-color: {adaptedColors().input}"
+									class="flex items-center gap-1.5 rounded-full px-2 py-1.5"
+									style={getComposerShellStyle()}
 								>
 									<Select
 										type="single"
@@ -621,18 +973,19 @@
 									>
 										<SelectTrigger
 											class="h-7 min-w-[6.8rem] max-w-[7.4rem] border-0 bg-transparent px-1.5 py-1 text-[11px] font-semibold shadow-none focus-visible:ring-0"
+											style={getSpeakerTriggerStyle()}
 										>
-											<span
-												data-slot="select-value"
-												class="truncate"
-												style="color: {adaptedColors().text}"
-											>
+											<span data-slot="select-value" class="truncate">
 												{characterMap.get(selectedSpeakerId)?.username ?? 'Speaker'}
 											</span>
 										</SelectTrigger>
-										<SelectContent>
+										<SelectContent class={getSpeakerContentClass()}>
 											{#each characters as character (character.id)}
-												<SelectItem value={character.id} label={character.username}>
+												<SelectItem
+													value={character.id}
+													label={character.username}
+													class={chatPlatform === 'discord' ? 'data-[highlighted]:bg-white/10 data-[highlighted]:text-white' : ''}
+												>
 													{character.username}
 												</SelectItem>
 											{/each}
@@ -640,40 +993,47 @@
 									</Select>
 									<input
 										bind:value={composerText}
-										class="min-w-0 flex-1 bg-transparent px-1 py-1 text-sm outline-none"
-										style="color: {adaptedColors().text}"
-										placeholder={`Message #${channelName}`}
+										class="min-w-0 flex-1 bg-transparent px-1 py-1 text-sm outline-none placeholder:text-[11px]"
+										style={getComposerInputStyle()}
+										placeholder={composerPlaceholder}
 										onkeydown={handleComposerKeyDown}
 									/>
 									<button
 										type="button"
-										class="rounded-md px-2 py-1 text-[11px] font-semibold transition-opacity disabled:opacity-40"
-										style="background-color: {primaryColor}; color: #fff;"
+										class="rounded-md px-2 py-1 text-[11px] font-semibold transition-opacity disabled:opacity-40 flex items-center justify-center"
+										style={getSendButtonStyle()}
 										onclick={handleComposerSend}
 										disabled={!composerText.trim() || !selectedSpeakerId}
+										aria-label="Send message"
 									>
-										Send
+										{#if isDiscord}
+											Send
+										{:else}
+											<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" d="M5 12h14m0 0l-5.5-5.5M19 12l-5.5 5.5"/>
+											</svg>
+										{/if}
 									</button>
 								</div>
 							{:else}
 								<div
 									class="flex items-center gap-2 rounded-full px-3 py-2"
-									style="background-color: {adaptedColors().input}"
+									style={getPassiveComposerShellStyle()}
 								>
 									<!-- Add Icon -->
-									<svg class="w-5 h-5 flex-shrink-0" style="color: {adaptedColors().textMuted}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<svg class="w-5 h-5 flex-shrink-0" style={getHeaderSubtitleStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
 									</svg>
 									<!-- Input Placeholder -->
-									<div class="flex-1 text-sm" style="color: {adaptedColors().textDim}">
-										Message #{channelName}
+									<div class="flex-1 text-sm" style={getComposerPlaceholderStyle()}>
+										{composerPlaceholder}
 									</div>
 									<!-- Emoji & More Icons -->
 									<div class="flex items-center gap-2">
-										<svg class="w-5 h-5" style="color: {adaptedColors().textMuted}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<svg class="w-5 h-5" style={getHeaderSubtitleStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
 										</svg>
-										<svg class="w-5 h-5" style="color: {textColor}88" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<svg class="w-5 h-5" style={getHeaderSubtitleStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/>
 										</svg>
 									</div>
@@ -686,7 +1046,7 @@
 					<div class="h-full flex items-center justify-center relative" style="background-color: {backgroundColor};">
 						<div
 							class="rounded-lg p-6 text-center max-w-xs backdrop-blur-sm"
-							style="background-color: {adaptedColors().header}"
+							style={`background-color: ${chatPlatform === 'discord' ? '#1e1f22' : '#ffffffee'}`}
 						>
 							<div
 								class="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin mx-auto mb-4"
