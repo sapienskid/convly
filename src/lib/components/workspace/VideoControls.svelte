@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { Slider } from '$lib/components/ui/slider';
-	import { Play, Pause, RotateCcw, Download } from 'lucide-svelte';
+	import { Play, Pause, RotateCcw, Download } from '@lucide/svelte';
 
 	interface Props {
 		isPlaying?: boolean;

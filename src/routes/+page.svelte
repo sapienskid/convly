@@ -1,14 +1,13 @@
 <script lang="ts">
-	import CanvasWorkspace from '$lib/components/workspace/CanvasWorkspace.svelte';
 	import LeftSidebar from '$lib/components/workspace/LeftSidebar.svelte';
 	import RightPanel from '$lib/components/workspace/RightPanel.svelte';
 	import PhonePreview from '$lib/components/workspace/PhonePreview.svelte';
 	import VideoControls from '$lib/components/workspace/VideoControls.svelte';
-	import BottomToolbar from '$lib/components/workspace/BottomToolbar.svelte';
 	import CharacterEditor from '$lib/components/workspace/CharacterEditor.svelte';
 	import CharacterManagerDialog from '$lib/components/workspace/CharacterManagerDialog.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import { ChevronRight, ChevronLeft } from 'lucide-svelte/icons';
+	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/components/ui/select';
+	import { ChevronRight, ChevronLeft, Plus, Trash2, GripVertical, Reply } from '@lucide/svelte/icons';
 	import { onMount, tick } from 'svelte';
 	import { initializeStore, isInitialized } from '$lib/stores/appStore';
 	import { buildMessageAnimationTimeline } from '$lib/utils/animationTimeline';
@@ -16,13 +15,14 @@
 	import { VideoExporter, downloadVideo, getResolutionPreset, type ExportProgress } from '$lib/utils/videoExport';
 	
 	let isRightPanelCollapsed = $state(true);
-	const graphReadOnly = true;
 	let isCharacterManagerOpen = $state(false);
-	let editorView = $state<'graph' | 'json'>('graph');
+	let editorView = $state<'conversation' | 'json'>('conversation');
 	let jsonEditorValue = $state('');
 	let jsonEditorError = $state<string | null>(null);
 	let jsonEditorStatus = $state<string | null>(null);
 	let jsonEditorDirty = $state(false);
+	let dragSourceIndex = $state<number | null>(null);
+	let dragOverIndex = $state<number | null>(null);
 	
 	// Video Controls State
 	let isVideoPlaying = $state(false);
@@ -440,7 +440,7 @@
 				animationSpeed: normalizedAnimationSpeed,
 				quality: $customizeSettings.quality,
 				channelName: exportChannelName,
-				backgroundColor: $customizeSettings.backgroundColor || '#1f2933',
+				backgroundColor: $customizeSettings.backgroundColor || '#313338',
 				outputFileStream: outputTarget.stream,
 				outputFileHandle: outputTarget.handle,
 				outputFileStreamMode: outputTarget.mode === 'none' ? undefined : outputTarget.mode,
@@ -649,111 +649,110 @@
 		characters,
 		messages,
 		connections,
-		selectedTool,
-		selectedElement,
 		editingCharacter,
 		previewState,
 		isGenerating,
 		customizeSettings,
-		updateCharacterPosition,
-		updateMessagePosition,
 		updateMessageText,
+		updateMessage,
 		updateCharacter,
 		addMessageForCharacter,
 		importConversationFromJSON,
 		sendMessageFromPreview,
-		autoArrangeGraph,
 		applyConversationQAFix,
 		handleApplyCustomization,
 		deleteElement,
 		addCharacter,
-		addMessage
+		addMessage,
+		deleteMessage,
+		deleteConnection,
+		addConnection
 	} from '$lib/stores/appStore';
-	import type { Tool } from '$lib/types';
 	import type { ConversationFixAction } from '$lib/utils/conversationQA';
+	import { analyzeMessageFlow } from '$lib/utils/messageFlow';
 
-	function handleToolSelect(tool: Tool) {
-		if (graphReadOnly && (tool === 'character' || tool === 'message')) {
-			return;
+	// Ordered messages for the conversation list editor
+	const orderedMessages = $derived.by(() => {
+		const flowInfo = analyzeMessageFlow($messages, $connections);
+		return flowInfo.map((info) => info.message);
+	});
+	const characterMap = $derived(new Map($characters.map((c) => [c.id, c])));
+
+	function handleAddMessage() {
+		const firstCharacter = $characters[0];
+		if (!firstCharacter) return;
+		addMessageForCharacter(firstCharacter.id);
+	}
+
+	function handleDeleteMessage(messageId: string) {
+		deleteMessage(messageId);
+	}
+
+	function handleMessageCharacterChange(messageId: string, characterId: string) {
+		updateMessage(messageId, { characterId });
+	}
+
+	function handleMessageReplyChange(messageId: string, replyTo: string | null) {
+		updateMessage(messageId, { replyTo });
+	}
+
+	function handleMoveMessage(fromIndex: number, toIndex: number) {
+		if (fromIndex === toIndex) return;
+		const ordered = orderedMessages;
+		if (fromIndex < 0 || fromIndex >= ordered.length || toIndex < 0 || toIndex >= ordered.length) return;
+
+		// Rebuild flow connections to reflect the new order
+		const newOrder = [...ordered];
+		const [moved] = newOrder.splice(fromIndex, 1);
+		newOrder.splice(toIndex, 0, moved);
+
+		// Remove all existing flow connections
+		const flowConnections = $connections.filter((c) => c.type === 'flow');
+		for (const conn of flowConnections) {
+			deleteConnection(conn.id);
 		}
-		selectedTool.set(tool);
-		// Deselect element when switching tools
-		if (tool !== 'select') {
-			selectedElement.set(null);
+
+		// Create new flow connections based on the new order
+		for (let i = 0; i < newOrder.length - 1; i++) {
+			addConnection({
+				from: newOrder[i].id,
+				to: newOrder[i + 1].id,
+				type: 'flow',
+				color: '#6b7280'
+			});
 		}
 	}
 
-	$effect(() => {
-		if (!graphReadOnly) return;
-		if ($selectedTool === 'character' || $selectedTool === 'message') {
-			selectedTool.set('select');
+	function handleDragStart(index: number) {
+		dragSourceIndex = index;
+	}
+
+	function handleDragOver(event: DragEvent, index: number) {
+		event.preventDefault();
+		dragOverIndex = index;
+	}
+
+	function handleDrop(index: number) {
+		if (dragSourceIndex !== null && dragSourceIndex !== index) {
+			handleMoveMessage(dragSourceIndex, index);
 		}
-	});
+		dragSourceIndex = null;
+		dragOverIndex = null;
+	}
+
+	function handleDragEnd() {
+		dragSourceIndex = null;
+		dragOverIndex = null;
+	}
 
 	function handleKeyboardShortcut(event: KeyboardEvent) {
-		// Ignore if typing in an input/textarea
 		if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
 			return;
 		}
 
-		// Tool shortcuts
-		switch (event.key.toLowerCase()) {
-			case 'v':
-				event.preventDefault();
-				handleToolSelect('select');
-				break;
-			case 'h':
-				event.preventDefault();
-				handleToolSelect('pan');
-				break;
-			case 'c':
-				if (graphReadOnly) break;
-				event.preventDefault();
-				handleToolSelect('character');
-				break;
-			case 'm':
-				if (graphReadOnly) break;
-				event.preventDefault();
-				handleToolSelect('message');
-				break;
-			case 'escape':
-				event.preventDefault();
-				selectedElement.set(null);
-				handleToolSelect('select');
-				break;
+		if (event.key === 'Escape') {
+			event.preventDefault();
 		}
-		
-		// Delete shortcut
-		if (event.key === 'Delete' || event.key === 'Backspace') {
-			if (
-				!graphReadOnly &&
-				$selectedElement &&
-				!(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)
-			) {
-				event.preventDefault();
-				handleDelete();
-			}
-		}
-		
-		// Duplicate shortcut (Ctrl/Cmd + D)
-		if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
-			if (!graphReadOnly && $selectedElement) {
-				event.preventDefault();
-				handleDuplicate();
-			}
-		}
-	}
-
-	function handleElementSelect(id: string | null) {
-		selectedElement.set(id);
-	}
-
-	function handleCharacterEdit(id: string) {
-		editingCharacter.set(id);
-	}
-
-	function handleCharacterUsernameUpdate(id: string, username: string) {
-		updateCharacter(id, { username });
 	}
 
 	function handleCharacterEditorClose() {
@@ -772,51 +771,6 @@
 		}
 		return counts;
 	});
-
-	function handleDelete() {
-		if (graphReadOnly) return;
-		const element = $selectedElement;
-		if (!element) return;
-		
-		const char = $characters.find(c => c.id === element);
-		const msg = $messages.find(m => m.id === element);
-		
-		if (char) {
-			deleteElement(element, 'character');
-		} else if (msg) {
-			deleteElement(element, 'message');
-		}
-		selectedElement.set(null);
-	}
-
-	function handleDuplicate() {
-		if (graphReadOnly) return;
-		const element = $selectedElement;
-		if (!element) return;
-		
-		const char = $characters.find(c => c.id === element);
-		const msg = $messages.find(m => m.id === element);
-		
-		if (char) {
-			const newChar = {
-				username: char.username + ' (Copy)',
-				avatar: char.avatar,
-				roleColor: char.roleColor,
-				position: { x: char.position.x + 50, y: char.position.y + 50 }
-			};
-			const newId = addCharacter(newChar);
-			selectedElement.set(newId);
-		} else if (msg) {
-			const newMsg = {
-				characterId: msg.characterId,
-				text: msg.text,
-				position: { x: msg.position.x + 50, y: msg.position.y + 50 },
-				timestamp: new Date().toISOString()
-			};
-			const newId = addMessage(newMsg);
-			selectedElement.set(newId);
-		}
-	}
 
 	function buildConversationJson(): string {
 		const characterById = new Map($characters.map((character) => [character.id, character.username]));
@@ -876,7 +830,7 @@
 		jsonEditorValue = buildConversationJson();
 	});
 
-	function setEditorMode(mode: 'graph' | 'json') {
+	function setEditorMode(mode: 'conversation' | 'json') {
 		editorView = mode;
 		jsonEditorError = null;
 		jsonEditorStatus = null;
@@ -894,7 +848,7 @@
 			jsonEditorStatus = 'Conversation JSON applied successfully.';
 			jsonEditorDirty = false;
 			jsonEditorValue = buildConversationJson();
-			editorView = 'graph';
+			editorView = 'conversation';
 		} catch (error) {
 			jsonEditorStatus = null;
 			jsonEditorError =
@@ -907,7 +861,7 @@
 	function handleJsonReset() {
 		jsonEditorValue = buildConversationJson();
 		jsonEditorError = null;
-		jsonEditorStatus = 'Conversation JSON reset from current graph.';
+		jsonEditorStatus = 'Conversation JSON reset from current state.';
 		jsonEditorDirty = false;
 	}
 
@@ -926,7 +880,7 @@
 		if (!createdId) return;
 		if (editorView === 'json' && jsonEditorDirty) {
 			jsonEditorStatus =
-				'Preview added a message. Use Reset to sync JSON or Apply JSON to replace graph.';
+				'Preview added a message. Use Reset to sync JSON or Apply JSON to replace conversation.';
 		} else {
 			jsonEditorStatus = null;
 		}
@@ -938,26 +892,21 @@
 		avatar: string;
 		roleColor: string;
 	}) {
-		const newId = addCharacter({
+		addCharacter({
 			username: payload.username,
 			avatar: payload.avatar,
 			roleColor: payload.roleColor,
-			position: { x: 100, y: 100 }
+			position: { x: 0, y: 0 }
 		});
-		autoArrangeGraph({ force: true });
-		selectedElement.set(newId);
 	}
 
 	function handleCharacterManagerEdit(characterId: string) {
-		handleCharacterEdit(characterId);
+		editingCharacter.set(characterId);
 		isCharacterManagerOpen = false;
 	}
 
 	function handleCharacterManagerDelete(characterId: string) {
 		deleteElement(characterId, 'character');
-		if ($selectedElement === characterId) {
-			selectedElement.set(null);
-		}
 		if ($editingCharacter === characterId) {
 			editingCharacter.set(null);
 		}
@@ -981,42 +930,28 @@
 {:else}
 	<div class="flex h-screen w-full overflow-hidden bg-background">
 	<!-- Left Sidebar -->
-	<LeftSidebar
-		selectedTool={$selectedTool}
-		onToolSelect={handleToolSelect}
-		selectedElement={$selectedElement}
-		readOnly={graphReadOnly}
-		elementCount={{
-			characters: $characters.length,
-			messages: $messages.length,
-			connections: $connections.length
-		}}
-	/>
+	<LeftSidebar />
 
-	<!-- Main Content Area - Canvas Workspace -->
+	<!-- Main Content Area - Conversation Editor -->
 	<div class="flex flex-1 flex-col border-r border-border bg-background">
-		<div class="flex items-center justify-between border-b border-border bg-card/70 px-3 py-2 backdrop-blur-sm">
+		<div class="flex items-center justify-between border-b border-border bg-card/70 px-4 py-2.5 backdrop-blur-sm">
 			<div class="flex items-center gap-3">
-				<div class="hidden rounded-lg border border-border bg-background/70 px-2.5 py-1 md:block">
-					<p class="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-						Convly Studio
-					</p>
-					<p class="text-[0.68rem] font-medium text-foreground/80">Graph Workspace</p>
-				</div>
 				<Button size="sm" variant="outline" onclick={() => (isCharacterManagerOpen = true)}>
 					Characters
 				</Button>
-				<div class="inline-flex rounded-md border border-border bg-muted/30 p-1">
+				<div class="inline-flex rounded-md border border-border bg-muted/30 p-0.5">
 					<Button
 						size="sm"
-						variant={editorView === 'graph' ? 'default' : 'ghost'}
-						onclick={() => setEditorMode('graph')}
+						variant={editorView === 'conversation' ? 'default' : 'ghost'}
+						class="h-7 text-xs"
+						onclick={() => setEditorMode('conversation')}
 					>
-						Graph
+						Conversation
 					</Button>
 					<Button
 						size="sm"
 						variant={editorView === 'json' ? 'default' : 'ghost'}
+						class="h-7 text-xs"
 						onclick={() => setEditorMode('json')}
 					>
 						JSON
@@ -1028,30 +963,182 @@
 					<Button size="sm" variant="outline" onclick={handleJsonReset}>Reset</Button>
 					<Button size="sm" onclick={handleJsonApply}>Apply JSON</Button>
 				</div>
+			{:else}
+				<div class="flex items-center gap-2">
+					<span class="text-xs text-muted-foreground">{orderedMessages.length} messages</span>
+					<Button size="sm" onclick={handleAddMessage} disabled={$characters.length === 0}>
+						<Plus class="h-4 w-4 mr-1" />
+						Add
+					</Button>
+				</div>
 			{/if}
 		</div>
 
-		<div class="flex-1">
-			{#if editorView === 'graph'}
-				<CanvasWorkspace
-					characters={$characters}
-					messages={$messages}
-					connections={$connections}
-					selectedTool={$selectedTool}
-					selectedElement={$selectedElement}
-					readOnly={graphReadOnly}
-					onCharacterMove={updateCharacterPosition}
-					onMessageMove={updateMessagePosition}
-					onMessageTextUpdate={updateMessageText}
-					onCharacterUsernameUpdate={handleCharacterUsernameUpdate}
-					onElementSelect={handleElementSelect}
-					onAddMessage={addMessageForCharacter}
-					onCharacterEdit={handleCharacterEdit}
-				/>
+		<div class="flex-1 overflow-hidden">
+			{#if editorView === 'conversation'}
+				<div class="h-full overflow-y-auto">
+					{#if $characters.length === 0}
+						<div class="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+							<p class="text-sm text-muted-foreground">
+								No characters yet. Create characters first to start building your conversation.
+							</p>
+							<Button size="sm" onclick={() => (isCharacterManagerOpen = true)}>
+								Create Character
+							</Button>
+						</div>
+					{:else if orderedMessages.length === 0}
+						<div class="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+							<p class="text-sm text-muted-foreground">
+								No messages yet. Add a message to start building your conversation.
+							</p>
+							<Button size="sm" onclick={handleAddMessage}>
+								<Plus class="h-4 w-4 mr-1" />
+								Add Message
+							</Button>
+						</div>
+					{:else}
+						<div class="flex flex-col gap-0.5 p-2">
+							{#each orderedMessages as message, index (message.id)}
+								{@const character = characterMap.get(message.characterId ?? '')}
+								{@const replyToMessage = message.replyTo ? orderedMessages.find(m => m.id === message.replyTo) : null}
+								{@const replyCharacter = replyToMessage?.characterId ? characterMap.get(replyToMessage.characterId) : null}
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<div
+									class="group relative rounded-lg border border-transparent transition-colors hover:border-border hover:bg-accent/40 {dragOverIndex === index ? 'border-primary bg-primary/10' : ''}"
+									role="listitem"
+									draggable="true"
+									ondragstart={() => handleDragStart(index)}
+									ondragover={(e) => handleDragOver(e, index)}
+									ondrop={() => handleDrop(index)}
+									ondragend={handleDragEnd}
+								>
+									<!-- Top row: drag handle, number, speaker, reply picker, delete -->
+									<div class="flex items-center gap-1.5 px-2 pt-1.5 pb-0.5">
+										<div class="flex-shrink-0 cursor-grab opacity-0 transition-opacity group-hover:opacity-50 active:cursor-grabbing">
+											<GripVertical class="h-3.5 w-3.5 text-muted-foreground" />
+										</div>
+										<span class="flex-shrink-0 text-[10px] font-medium text-muted-foreground/60 w-4 text-center">
+											{index + 1}
+										</span>
+										<Select
+											type="single"
+											value={message.characterId ?? ''}
+											onValueChange={(value) => handleMessageCharacterChange(message.id, value)}
+										>
+											<SelectTrigger class="h-6 w-auto min-w-[5rem] max-w-[8rem] border-0 bg-transparent px-1.5 py-0 text-[11px] font-semibold shadow-none focus-visible:ring-0">
+												{#if character}
+													<div class="flex items-center gap-1.5 truncate">
+														<div
+															class="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+															style="background-color: {character.roleColor};"
+														></div>
+														<span class="truncate">{character.username}</span>
+													</div>
+												{:else}
+													<span class="text-muted-foreground">Speaker</span>
+												{/if}
+											</SelectTrigger>
+											<SelectContent>
+												{#each $characters as char (char.id)}
+													<SelectItem value={char.id}>
+														<div class="flex items-center gap-1.5">
+															<div
+																class="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+																style="background-color: {char.roleColor};"
+															></div>
+															{char.username}
+														</div>
+													</SelectItem>
+												{/each}
+											</SelectContent>
+										</Select>
+										<div class="flex-1"></div>
+										<!-- Reply picker -->
+										{#if index > 0}
+											<div class="flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
+												<Select
+													type="single"
+													value={message.replyTo ?? ''}
+													onValueChange={(value) => handleMessageReplyChange(message.id, value || null)}
+												>
+													<SelectTrigger class="h-6 w-6 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0" title="Reply to...">
+														<Reply class="h-3 w-3 text-muted-foreground" />
+													</SelectTrigger>
+													<SelectContent>
+														<SelectItem value="">No reply</SelectItem>
+														{#each orderedMessages.slice(0, index) as prevMsg, prevIndex (prevMsg.id)}
+															{@const prevChar = characterMap.get(prevMsg.characterId ?? '')}
+															<SelectItem value={prevMsg.id}>
+																<span class="text-xs">
+																	#{prevIndex + 1} {prevChar?.username ?? 'Unknown'}: {prevMsg.text.slice(0, 30)}{prevMsg.text.length > 30 ? '...' : ''}
+																</span>
+															</SelectItem>
+														{/each}
+													</SelectContent>
+												</Select>
+											</div>
+										{/if}
+										<!-- Delete -->
+										<button
+											class="flex-shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+											title="Delete message"
+											onclick={() => handleDeleteMessage(message.id)}
+										>
+											<Trash2 class="h-3 w-3" />
+										</button>
+									</div>
+
+									<!-- Message text row -->
+									<div class="px-2 pb-1.5 pl-[3.25rem]">
+										{#if replyToMessage}
+											<div class="mb-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+												<Reply class="h-2.5 w-2.5 flex-shrink-0" />
+												<span class="truncate">
+													{replyCharacter?.username ?? 'Unknown'}: {replyToMessage.text.slice(0, 40)}{replyToMessage.text.length > 40 ? '...' : ''}
+												</span>
+												<button
+													class="ml-0.5 rounded text-muted-foreground hover:text-destructive"
+													onclick={() => handleMessageReplyChange(message.id, null)}
+												>
+													&times;
+												</button>
+											</div>
+										{/if}
+										<textarea
+											class="w-full resize-none rounded border border-transparent bg-transparent px-1.5 py-1 text-sm leading-snug outline-none transition-colors placeholder:text-muted-foreground/40 hover:border-border focus:border-ring focus:bg-background focus:ring-1 focus:ring-ring"
+											rows="1"
+											value={message.text}
+											oninput={(e) => {
+												const target = e.target as HTMLTextAreaElement;
+												updateMessageText(message.id, target.value);
+												target.style.height = 'auto';
+												target.style.height = target.scrollHeight + 'px';
+											}}
+											onfocus={(e) => {
+												const target = e.target as HTMLTextAreaElement;
+												target.style.height = 'auto';
+												target.style.height = target.scrollHeight + 'px';
+											}}
+											placeholder="Type message..."
+										></textarea>
+									</div>
+								</div>
+							{/each}
+
+							<!-- Add message button at bottom -->
+							<div class="flex justify-center py-2">
+								<Button size="sm" variant="ghost" class="h-7 text-xs text-muted-foreground" onclick={handleAddMessage} disabled={$characters.length === 0}>
+									<Plus class="h-3.5 w-3.5 mr-1" />
+									Add message
+								</Button>
+							</div>
+						</div>
+					{/if}
+				</div>
 			{:else}
 				<div class="flex h-full flex-col gap-3 p-4">
 					<p class="text-xs text-muted-foreground">
-						Use JSON for bulk creation/import. Apply replaces current conversation graph.
+						Use JSON for bulk creation/import. Apply replaces current conversation.
 					</p>
 					<textarea
 						class="h-full min-h-0 w-full flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -1067,23 +1154,6 @@
 				</div>
 			{/if}
 		</div>
-
-		<!-- Bottom Toolbar -->
-		{#if editorView === 'graph'}
-			<BottomToolbar
-				selectedTool={$selectedTool}
-				onToolSelect={handleToolSelect}
-				selectedElement={$selectedElement}
-				readOnly={graphReadOnly}
-				elementCount={{
-					characters: $characters.length,
-					messages: $messages.length,
-					connections: $connections.length
-				}}
-				onDelete={handleDelete}
-				onDuplicate={handleDuplicate}
-			/>
-		{/if}
 	</div>
 
 	<!-- Preview Panel -->

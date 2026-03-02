@@ -7,7 +7,7 @@
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import type { Character } from '$lib/types';
 	import { updateCharacter } from '$lib/stores/appStore';
-	import { User, Palette, Shield } from 'lucide-svelte';
+	import { User, Palette, Shield } from '@lucide/svelte';
 
 	interface Props {
 		character: Character | null;

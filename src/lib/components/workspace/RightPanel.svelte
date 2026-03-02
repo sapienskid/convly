@@ -32,7 +32,7 @@
 		X,
 		ShieldAlert,
 		Wrench
-	} from 'lucide-svelte/icons';
+	} from '@lucide/svelte/icons';
 	import { buildMessageAnimationTimeline } from '$lib/utils/animationTimeline';
 	import {
 		analyzeConversationQA,
@@ -141,8 +141,8 @@
 
 	const templatePresets: Record<ChatPlatformSetting, Partial<CustomizationSettings>> = {
 		discord: {
-			backgroundColor: '#1f2933',
-			textColor: '#f4f6f8',
+			backgroundColor: '#313338',
+			textColor: '#dbdee1',
 			primaryColor: '#5865f2',
 			fontFamily: 'Instrument Sans',
 			fontSize: 16,
@@ -155,7 +155,7 @@
 		whatsapp: {
 			backgroundColor: '#efeae2',
 			textColor: '#111b21',
-			primaryColor: '#25d366',
+			primaryColor: '#00a884',
 			fontFamily: 'Manrope',
 			fontSize: 15,
 			fontWeight: 'normal',
@@ -165,8 +165,8 @@
 			showTimestamps: true
 		},
 		messenger: {
-			backgroundColor: '#f5f7fb',
-			textColor: '#111827',
+			backgroundColor: '#ffffff',
+			textColor: '#050505',
 			primaryColor: '#0084ff',
 			fontFamily: 'Manrope',
 			fontSize: 15,
@@ -177,9 +177,9 @@
 			showTimestamps: false
 		},
 		telegram: {
-			backgroundColor: '#e8eef7',
-			textColor: '#17212b',
-			primaryColor: '#2aabee',
+			backgroundColor: '#e6ebee',
+			textColor: '#000000',
+			primaryColor: '#0088ff',
 			fontFamily: 'Archivo',
 			fontSize: 15,
 			fontWeight: 'normal',

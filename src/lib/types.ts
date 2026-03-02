@@ -76,11 +76,11 @@ export interface CustomizationSettings {
 export const defaultCustomizationSettings: CustomizationSettings = {
 	channelName: 'announcements',
 	chatPlatform: 'discord',
-	backgroundColor: '#1f2933',
+	backgroundColor: '#313338',
 	backgroundImage: '',
 	backgroundTheme: 'none',
-	primaryColor: '#ff6f3b',
-	textColor: '#f4f6f8',
+	primaryColor: '#5865f2',
+	textColor: '#dbdee1',
 	fontFamily: 'Instrument Sans',
 	fontSize: 16,
 	fontWeight: 'normal',
@@ -103,5 +103,4 @@ export const defaultCustomizationSettings: CustomizationSettings = {
 	enableCompression: true
 };
 
-export type Tool = 'select' | 'character' | 'message' | 'pan';
 export type PreviewState = 'preview' | 'loading' | 'video';

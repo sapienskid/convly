@@ -114,27 +114,27 @@
 		{ backgroundColor: string; primaryColor: string; textColor: string; fontFamily: string }
 	> = {
 		discord: {
-			backgroundColor: '#1f2933',
+			backgroundColor: '#313338',
 			primaryColor: '#5865f2',
-			textColor: '#f4f6f8',
+			textColor: '#dbdee1',
 			fontFamily: 'Instrument Sans'
 		},
 		whatsapp: {
 			backgroundColor: '#efeae2',
-			primaryColor: '#25d366',
+			primaryColor: '#00a884',
 			textColor: '#111b21',
 			fontFamily: 'Manrope'
 		},
 		messenger: {
-			backgroundColor: '#f5f7fb',
+			backgroundColor: '#ffffff',
 			primaryColor: '#0084ff',
-			textColor: '#111827',
+			textColor: '#050505',
 			fontFamily: 'Manrope'
 		},
 		telegram: {
-			backgroundColor: '#e8eef7',
-			primaryColor: '#2aabee',
-			textColor: '#17212b',
+			backgroundColor: '#e6ebee',
+			primaryColor: '#0088ff',
+			textColor: '#000000',
 			fontFamily: 'Archivo'
 		}
 	};
@@ -150,7 +150,6 @@
 	const channelName = $derived(customizeSettings.channelName || 'announcements');
 	const channelPrefix = $derived.by(() => {
 		if (chatPlatform === 'discord') return '#';
-		if (chatPlatform === 'telegram') return '@';
 		return '';
 	});
 	const headerSubtitle = $derived.by(() => {
@@ -391,78 +390,90 @@
 	}
 
 	function shouldShowBubbleTimestamp(): boolean {
-		return showTimestamps && chatPlatform !== 'discord';
+		return showTimestamps && chatPlatform !== 'discord' && chatPlatform !== 'messenger';
 	}
 
 	function getStatusBarStyle(): string {
 		if (chatPlatform === 'whatsapp') {
-			return 'background-color: #054d44;';
+			return 'background-color: #00a884;';
 		}
 		if (chatPlatform === 'messenger') {
 			return 'background-color: #ffffff;';
 		}
 		if (chatPlatform === 'telegram') {
-			return 'background-color: #3f6f99;';
+			return 'background-color: #517da2;';
 		}
-		return 'background-color: #111214;';
+		return 'background-color: #1e1f22;';
 	}
 
 	function getStatusBarTextStyle(): string {
 		if (chatPlatform === 'messenger') {
-			return 'color: #111827;';
+			return 'color: #050505;';
 		}
 		return 'color: #f8fafc;';
 	}
 
 	function getHeaderContainerStyle(): string {
 		if (chatPlatform === 'whatsapp') {
-			return 'background-color: #075e54; border-bottom-color: #0e6b61;';
+			return 'background-color: #f0f2f5; border-bottom-color: #d9dce2;';
 		}
 		if (chatPlatform === 'messenger') {
-			return 'background-color: #ffffff; border-bottom-color: #dbe2ef;';
+			return 'background-color: #ffffff; border-bottom-color: #e4e6eb;';
 		}
 		if (chatPlatform === 'telegram') {
-			return 'background-color: #4f7ea8; border-bottom-color: #3f6f99;';
+			return 'background-color: #517da2; border-bottom-color: #46708f;';
 		}
-		return 'background-color: #1e1f22; border-bottom-color: #111214;';
+		return 'background-color: #313338; border-bottom-color: #3f4147;';
 	}
 
 	function getHeaderTextStyle(): string {
-		if (chatPlatform === 'whatsapp' || chatPlatform === 'telegram') {
+		if (chatPlatform === 'whatsapp') {
+			return 'color: #111b21;';
+		}
+		if (chatPlatform === 'telegram') {
 			return 'color: #f8fafc;';
 		}
 		if (chatPlatform === 'messenger') {
-			return 'color: #111827;';
+			return 'color: #050505;';
 		}
 		return 'color: #f2f3f5;';
 	}
 
 	function getHeaderSubtitleStyle(): string {
-		if (chatPlatform === 'whatsapp' || chatPlatform === 'telegram') {
+		if (chatPlatform === 'whatsapp') {
+			return 'color: #667781;';
+		}
+		if (chatPlatform === 'telegram') {
 			return 'color: rgba(248, 250, 252, 0.78);';
 		}
 		if (chatPlatform === 'messenger') {
-			return 'color: #6b7280;';
+			return 'color: #65676b;';
 		}
-		return 'color: #b5bac1;';
+		return 'color: #949ba4;';
 	}
 
 	function getHeaderIconStyle(): string {
-		if (chatPlatform === 'whatsapp' || chatPlatform === 'telegram') {
+		if (chatPlatform === 'whatsapp') {
+			return 'color: #54656f;';
+		}
+		if (chatPlatform === 'telegram') {
 			return 'color: #e2f2f0;';
 		}
 		if (chatPlatform === 'messenger') {
-			return 'color: #4b5563;';
+			return 'color: #050505;';
 		}
 		return 'color: #b5bac1;';
 	}
 
 	function getHeaderBadgeStyle(): string {
-		if (chatPlatform === 'whatsapp' || chatPlatform === 'telegram') {
+		if (chatPlatform === 'whatsapp') {
+			return 'background-color: #e9edef; color: #54656f;';
+		}
+		if (chatPlatform === 'telegram') {
 			return 'background-color: rgba(255,255,255,0.16); color: #f8fafc;';
 		}
 		if (chatPlatform === 'messenger') {
-			return 'background-color: #eef2ff; color: #2563eb;';
+			return 'background-color: #e4e6eb; color: #050505;';
 		}
 		return 'background-color: #2b2d31; color: #f2f3f5;';
 	}
@@ -475,7 +486,7 @@
 			return 'background-color: #d7e7f5; background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.35) 25%, rgba(255, 255, 255, 0) 25%), linear-gradient(225deg, rgba(255, 255, 255, 0.35) 25%, rgba(255, 255, 255, 0) 25%); background-size: 24px 24px; background-position: 0 0, 12px 12px;';
 		}
 		if (chatPlatform === 'messenger') {
-			return 'background-color: #f3f5fb;';
+			return 'background-color: #ffffff;';
 		}
 		return `background-color: ${backgroundColor};`;
 	}
@@ -559,7 +570,7 @@
 	function getMessageBodyStyle(isPrimarySpeaker: boolean): string {
 		const base = `font-size: ${fontSize}px; font-weight: ${fontWeightValue}; line-height: 1.45;`;
 		if (chatPlatform === 'discord') {
-			return `color: #dcddde; ${base} padding: ${messagePadding / 8}px 0; display: block; width: 100%;`;
+			return `color: #dbdee1; ${base} padding: ${messagePadding / 8}px 0; display: block; width: 100%;`;
 		}
 
 		if (chatPlatform === 'whatsapp') {
@@ -569,17 +580,16 @@
 		}
 
 		if (chatPlatform === 'messenger') {
-			const bubbleBackground = isPrimarySpeaker
-				? 'linear-gradient(145deg, #1298ff, #006aff)'
-				: '#e8ecf3';
-			const bubbleText = isPrimarySpeaker ? '#ffffff' : '#111827';
+			const bubbleBackground = isPrimarySpeaker ? '#0084ff' : '#E4E6EB';
+			const bubbleText = isPrimarySpeaker ? '#ffffff' : '#050505';
 			const radius = isPrimarySpeaker ? '18px 18px 6px 18px' : '18px 18px 18px 6px';
-			return `color: ${bubbleText}; ${base} background: ${bubbleBackground}; border-radius: ${radius}; border: 1px solid ${isPrimarySpeaker ? 'transparent' : '#dde3ee'}; padding: ${Math.round(messagePadding / 2)}px ${Math.round(messagePadding * 0.75)}px; display: inline-block; max-width: 100%;`;
+			return `color: ${bubbleText}; ${base} background-color: ${bubbleBackground}; border-radius: ${radius}; border: none; padding: ${Math.round(messagePadding / 2)}px ${Math.round(messagePadding * 0.75)}px; display: inline-block; max-width: 100%;`;
 		}
 
-		const bubbleColor = isPrimarySpeaker ? '#e7f3ff' : '#ffffff';
+		// Telegram
+		const bubbleColor = isPrimarySpeaker ? '#E1FFC7' : '#ffffff';
 		const radius = isPrimarySpeaker ? '14px 14px 6px 14px' : '14px 14px 14px 6px';
-		return `color: #17212b; ${base} background-color: ${bubbleColor}; border-radius: ${radius}; border: 1px solid rgba(42, 171, 238, 0.24); padding: ${Math.round(messagePadding / 2)}px ${Math.round(messagePadding * 0.75)}px; display: inline-block; max-width: 100%;`;
+		return `color: #000000; ${base} background-color: ${bubbleColor}; border-radius: ${radius}; border: 1px solid ${isPrimarySpeaker ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.12)'}; padding: ${Math.round(messagePadding / 2)}px ${Math.round(messagePadding * 0.75)}px; display: inline-block; max-width: 100%;`;
 	}
 
 	function getBubbleTimestampStyle(isPrimarySpeaker: boolean): string {
@@ -587,9 +597,12 @@
 			return `color: ${isPrimarySpeaker ? '#667781' : '#7d8c99'};`;
 		}
 		if (chatPlatform === 'messenger') {
-			return `color: ${isPrimarySpeaker ? 'rgba(255,255,255,0.78)' : '#7b8593'};`;
+			// Messenger shows timestamps between message groups, not inside bubbles.
+			// This style is kept as a fallback but shouldShowBubbleTimestamp() returns false for Messenger.
+			return `color: #65676b;`;
 		}
-		return 'color: #708397;';
+		// Telegram
+		return `color: ${isPrimarySpeaker ? '#4ea84e' : '#708397'};`;
 	}
 
 	function getTypingBubbleStyle(): string {
@@ -600,7 +613,7 @@
 			return 'background-color: #ffffff; border: 1px solid #dfe5ec;';
 		}
 		if (chatPlatform === 'messenger') {
-			return 'background-color: #e8ecf3;';
+			return 'background-color: #E4E6EB;';
 		}
 		return 'background-color: #ffffff; border: 1px solid #d2dce9;';
 	}
@@ -616,7 +629,7 @@
 			return 'background-color: #f0f2f5; border-top-color: #d9dce2;';
 		}
 		if (chatPlatform === 'messenger') {
-			return 'background-color: #ffffff; border-top-color: #dbe2ef;';
+			return 'background-color: #ffffff; border-top-color: #e4e6eb;';
 		}
 		if (chatPlatform === 'telegram') {
 			return 'background-color: #f3f5f7; border-top-color: #d2d8df;';
@@ -645,7 +658,7 @@
 			return 'background-color: #ffffff; border: 1px solid #d9dfe8;';
 		}
 		if (chatPlatform === 'messenger') {
-			return 'background-color: #f3f5fa; border: 1px solid #e1e7f1;';
+			return 'background-color: #f0f0f0; border: 1px solid transparent;';
 		}
 		return 'background-color: #ffffff; border: 1px solid #d5deea;';
 	}
@@ -687,7 +700,7 @@
 			return `background-color: ${primaryColor}; color: #ffffff;`;
 		}
 		if (chatPlatform === 'messenger') {
-			return 'background: linear-gradient(145deg, #1298ff, #006aff); color: #ffffff; min-width: 2rem; height: 2rem; border-radius: 999px;';
+			return 'background-color: #0084ff; color: #ffffff; min-width: 2rem; height: 2rem; border-radius: 999px;';
 		}
 		if (chatPlatform === 'whatsapp') {
 			return 'background-color: #00a884; color: #ffffff; min-width: 2rem; height: 2rem; border-radius: 999px;';
@@ -699,7 +712,20 @@
 		if (chatPlatform === 'discord') {
 			return 'background-color: #383a40;';
 		}
+		if (chatPlatform === 'messenger') {
+			return 'background-color: #f0f0f0; border: 1px solid transparent;';
+		}
+		if (chatPlatform === 'telegram') {
+			return 'background-color: #ffffff; border: 1px solid #d5deea;';
+		}
 		return 'background-color: #ffffff; border: 1px solid #d9dfe8;';
+	}
+
+	function getComposerIconStyle(): string {
+		if (chatPlatform === 'discord') return 'color: #b5bac1;';
+		if (chatPlatform === 'whatsapp') return 'color: #8696a0;';
+		if (chatPlatform === 'messenger') return 'color: #0084ff;';
+		return 'color: #8b98a5;';
 	}
 </script>
 
@@ -741,44 +767,102 @@
 								class="px-3 py-2 border-b flex items-center justify-between flex-shrink-0 shadow-sm backdrop-blur-sm"
 								style={getHeaderContainerStyle()}
 							>
-								<div class="flex items-center gap-2 flex-1 min-w-0">
-									<div
-										class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
-										style={getHeaderBadgeStyle()}
-									>
-										<span class="text-xs font-semibold">{channelPrefix || '@'}</span>
-									</div>
-									<div class="flex-1 min-w-0 leading-tight">
-										<div class="text-sm font-semibold truncate" style={getHeaderTextStyle()}>
-											{channelPrefix}{channelName}
+								{#if isDiscord}
+									<!-- Discord: # badge + channel name + members count -->
+									<div class="flex items-center gap-2 flex-1 min-w-0">
+										<div
+											class="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+											style={getHeaderBadgeStyle()}
+										>
+											<span class="text-xs font-semibold">#</span>
 										</div>
-										<div class="text-[10px] truncate" style={getHeaderSubtitleStyle()}>
-											{headerSubtitle}
+										<div class="flex-1 min-w-0 leading-tight">
+											<div class="text-sm font-semibold truncate" style={getHeaderTextStyle()}>
+												{channelName}
+											</div>
+											<div class="text-[10px] truncate" style={getHeaderSubtitleStyle()}>
+												{headerSubtitle}
+											</div>
 										</div>
 									</div>
-								</div>
-								<div class="flex items-center gap-3 ml-2">
-									{#if isTelegram}
+									<div class="flex items-center gap-3 ml-2">
+										<!-- Pin icon -->
 										<svg class="w-[18px] h-[18px]" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h10M11 12h7m-7 7h10M4 6h.01M4 12h.01M4 18h.01"/>
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/>
 										</svg>
-									{/if}
-									{#if !isTelegram}
-										<svg class="w-5 h-5" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+										<!-- Members icon -->
+										<svg class="w-[18px] h-[18px]" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
 										</svg>
-									{/if}
-									<svg class="w-5 h-5" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										{#if isMessenger}
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+										<!-- Search icon -->
+										<svg class="w-[18px] h-[18px]" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+										</svg>
+									</div>
+								{:else}
+									<!-- WhatsApp / Messenger / Telegram: back arrow + avatar + name/status + action icons -->
+									<div class="flex items-center gap-2 flex-1 min-w-0">
+										<!-- Back arrow -->
+										<svg class="w-5 h-5 flex-shrink-0" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+										</svg>
+										<!-- Group avatar circle -->
+										<div
+											class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden"
+											style="background: linear-gradient(135deg, {primaryColor}cc, {primaryColor}88);"
+										>
+											{#if characters.length > 0 && characters[0].avatar}
+												<img src={characters[0].avatar} alt="Group" class="w-full h-full object-cover rounded-full" />
+											{:else}
+												<svg class="w-4 h-4" style="color: #ffffff;" fill="currentColor" viewBox="0 0 24 24">
+													<path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+												</svg>
+											{/if}
+										</div>
+										<!-- Name + subtitle -->
+										<div class="flex-1 min-w-0 leading-tight">
+											<div class="text-sm font-semibold truncate" style={getHeaderTextStyle()}>
+												{channelName}
+											</div>
+											<div class="text-[10px] truncate" style={getHeaderSubtitleStyle()}>
+												{headerSubtitle}
+											</div>
+										</div>
+									</div>
+									<div class="flex items-center gap-3 ml-2">
+										{#if isWhatsApp}
+											<!-- WhatsApp: video call, phone call, dots -->
+											<svg class="w-5 h-5" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+											</svg>
+											<svg class="w-5 h-5" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+											</svg>
+											<svg class="w-5 h-5" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
+											</svg>
+										{:else if isMessenger}
+											<!-- Messenger: phone, video, info circle -->
+											<svg class="w-5 h-5" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+											</svg>
+											<svg class="w-5 h-5" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+											</svg>
+											<svg class="w-[18px] h-[18px]" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+											</svg>
 										{:else}
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+											<!-- Telegram: phone, dots/menu -->
+											<svg class="w-5 h-5" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"/>
+											</svg>
+											<svg class="w-5 h-5" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
+											</svg>
 										{/if}
-									</svg>
-									<svg class="w-5 h-5" style={getHeaderIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
-									</svg>
-								</div>
+									</div>
+								{/if}
 							</div>
 
 						<!-- Messages Area -->
@@ -792,14 +876,25 @@
 							>
 								{#if renderedMessages.length === 0}
 									<div class="flex flex-col items-center justify-center py-8 text-center">
-										<div
-											class="w-16 h-16 rounded-full flex items-center justify-center mb-4"
-											style={getHeaderBadgeStyle()}
-										>
-											<span class="text-2xl font-bold">{channelPrefix || '@'}</span>
-										</div>
+										{#if isDiscord}
+											<div
+												class="w-16 h-16 rounded-full flex items-center justify-center mb-4"
+												style={getHeaderBadgeStyle()}
+											>
+												<span class="text-2xl font-bold">#</span>
+											</div>
+										{:else}
+											<div
+												class="w-16 h-16 rounded-full flex items-center justify-center mb-4"
+												style="background: linear-gradient(135deg, {primaryColor}cc, {primaryColor}88);"
+											>
+												<svg class="w-8 h-8" style="color: #ffffff;" fill="currentColor" viewBox="0 0 24 24">
+													<path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+												</svg>
+											</div>
+										{/if}
 										<div class="text-base font-semibold mb-1" style={getHeaderTextStyle()}>
-											Welcome to {channelPrefix}{channelName}
+											Welcome to {channelName}
 										</div>
 										<div class="text-xs px-6" style={getHeaderSubtitleStyle()}>
 											Send your first message from the composer below.
@@ -1016,28 +1111,123 @@
 									</button>
 								</div>
 							{:else}
-								<div
-									class="flex items-center gap-2 rounded-full px-3 py-2"
-									style={getPassiveComposerShellStyle()}
-								>
-									<!-- Add Icon -->
-									<svg class="w-5 h-5 flex-shrink-0" style={getHeaderSubtitleStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-									</svg>
-									<!-- Input Placeholder -->
-									<div class="flex-1 text-sm" style={getComposerPlaceholderStyle()}>
-										{composerPlaceholder}
-									</div>
-									<!-- Emoji & More Icons -->
-									<div class="flex items-center gap-2">
-										<svg class="w-5 h-5" style={getHeaderSubtitleStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+								{#if isDiscord}
+									<!-- Discord: [+] [input placeholder] [gift GIF emoji sticker] — single row, compact -->
+									<div
+										class="flex items-center gap-1 rounded-lg px-2 py-1.5"
+										style="background-color: #383a40;"
+									>
+										<svg class="w-[18px] h-[18px] flex-shrink-0" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M12 4v16m8-8H4"/>
 										</svg>
-										<svg class="w-5 h-5" style={getHeaderSubtitleStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/>
+										<div class="flex-1 text-[13px] truncate" style={getComposerPlaceholderStyle()}>
+											{composerPlaceholder}
+										</div>
+										<div class="flex items-center gap-1">
+											<svg class="w-[16px] h-[16px]" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/>
+											</svg>
+											<span class="text-[9px] font-bold px-[3px] py-[1px] rounded" style={`${getComposerIconStyle()} border: 1.5px solid currentColor; line-height: 1;`}>GIF</span>
+											<svg class="w-[16px] h-[16px]" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+											</svg>
+											<svg class="w-[16px] h-[16px]" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+											</svg>
+										</div>
+									</div>
+								{:else if isWhatsApp}
+									<!-- WhatsApp: [emoji] [input pill] [camera] | [mic circle] -->
+									<div class="flex items-center gap-1.5">
+										<div
+											class="flex flex-1 items-center gap-1.5 rounded-full px-2.5 py-1.5"
+											style="background-color: #ffffff; border: 1px solid #d9dfe8;"
+										>
+											<svg class="w-[18px] h-[18px] flex-shrink-0" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+											</svg>
+											<div class="flex-1 text-[13px] truncate" style={getComposerPlaceholderStyle()}>
+												{composerPlaceholder}
+											</div>
+											<!-- Attachment/clip -->
+											<svg class="w-[18px] h-[18px]" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+											</svg>
+											<!-- Camera -->
+											<svg class="w-[18px] h-[18px]" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+												<circle cx="12" cy="13" r="3"/>
+											</svg>
+										</div>
+										<!-- Mic circle -->
+										<div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style="background-color: #00a884;">
+											<svg class="w-[16px] h-[16px]" style="color: #ffffff;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 11a7 7 0 01-14 0m7 7v4m-4 0h8M12 1a3 3 0 00-3 3v7a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+											</svg>
+										</div>
+									</div>
+								{:else if isMessenger}
+									<!-- Messenger: [grid camera gallery mic] outside | [input pill] [thumbs-up] -->
+									<div class="flex items-center gap-1.5">
+										<div class="flex items-center gap-1 flex-shrink-0">
+											<svg class="w-[18px] h-[18px]" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+											</svg>
+											<svg class="w-[18px] h-[18px]" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+												<circle cx="12" cy="13" r="3"/>
+											</svg>
+											<svg class="w-[18px] h-[18px]" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+											</svg>
+											<svg class="w-[18px] h-[18px]" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-14 0m7 7v4m-4 0h8M12 1a3 3 0 00-3 3v7a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+											</svg>
+										</div>
+										<div
+											class="flex flex-1 items-center gap-1 rounded-full px-3 py-1.5"
+											style="background-color: #f0f0f0;"
+										>
+											<div class="flex-1 text-[13px] truncate" style={getComposerPlaceholderStyle()}>
+												{composerPlaceholder}
+											</div>
+											<!-- Sticker/emoji -->
+											<svg class="w-[16px] h-[16px]" style="color: #0084ff;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+											</svg>
+										</div>
+										<!-- Thumbs up -->
+										<svg class="w-5 h-5 flex-shrink-0" style="color: #0084ff;" fill="currentColor" viewBox="0 0 24 24">
+											<path d="M2 20h2V8H2v12zm20-10c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L13.17 1 7.59 6.59C7.22 6.95 7 7.45 7 8v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/>
 										</svg>
 									</div>
-								</div>
+								{:else}
+									<!-- Telegram: [attachment] [input pill with emoji] | [mic circle] -->
+									<div class="flex items-center gap-1.5">
+										<div
+											class="flex flex-1 items-center gap-1.5 rounded-full px-2.5 py-1.5"
+											style="background-color: #ffffff; border: 1px solid #d5deea;"
+										>
+											<!-- Attachment/clip -->
+											<svg class="w-[18px] h-[18px] flex-shrink-0" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+											</svg>
+											<div class="flex-1 text-[13px] truncate" style={getComposerPlaceholderStyle()}>
+												{composerPlaceholder}
+											</div>
+											<!-- Emoji -->
+											<svg class="w-[18px] h-[18px]" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+											</svg>
+										</div>
+										<!-- Mic circle -->
+										<div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style="background-color: #2aabee;">
+											<svg class="w-[16px] h-[16px]" style="color: #ffffff;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 11a7 7 0 01-14 0m7 7v4m-4 0h8M12 1a3 3 0 00-3 3v7a3 3 0 006 0V4a3 3 0 00-3-3z"/>
+											</svg>
+										</div>
+									</div>
+								{/if}
 							{/if}
 						</div>
 					</div>

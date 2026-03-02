@@ -6,7 +6,7 @@
 	import { Avatar, AvatarFallback, AvatarImage } from '$lib/components/ui/avatar';
 	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/components/ui/select';
 	import type { Character } from '$lib/types';
-	import { Plus, Pencil, Trash2, Sparkles, Users } from 'lucide-svelte';
+	import { Plus, Pencil, Trash2, Sparkles, Users } from '@lucide/svelte';
 
 	interface Props {
 		open: boolean;

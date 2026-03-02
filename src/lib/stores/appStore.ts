@@ -4,7 +4,6 @@ import {
 	type Character,
 	type Message,
 	type Connection,
-	type Tool,
 	type PreviewState,
 	type CustomizationSettings
 } from '$lib/types';
@@ -153,182 +152,6 @@ function mergeCustomizationSettings(
 
 const flowColors = ['#ff6f3b', '#0ea5a4', '#2563eb', '#f59e0b', '#ef4444', '#14b8a6', '#0f766e', '#64748b'];
 
-const GRAPH_LAYOUT = {
-	characterColumnX: 100,
-	columnGap: 540,
-	characterVerticalSpacing: 260,
-	messageBaseGap: 96,
-	newMessageVerticalSpacing: 340,
-	speakerLaneOffset: 120,
-	replyIndent: 86,
-	minMessageHeight: 230,
-	maxMessageHeight: 860,
-	messageNodeWidth: 360,
-	overlapPadding: 18
-} as const;
-
-function estimateMessageNodeHeight(message: Message): number {
-	const text = message.text.trim();
-	const approxCharsPerLine = 34;
-	const explicitLineBreaks = Math.max(0, text.split(/\r?\n/).length - 1);
-	const estimatedLines = Math.max(1, Math.ceil(text.length / approxCharsPerLine) + explicitLineBreaks);
-	const cappedLines = Math.min(estimatedLines, 32);
-	const textHeight = cappedLines * 22;
-	const replyHeight = message.replyTo ? 84 : 0;
-	const rawHeight = 162 + textHeight + replyHeight;
-	return Math.max(
-		GRAPH_LAYOUT.minMessageHeight,
-		Math.min(GRAPH_LAYOUT.maxMessageHeight, rawHeight)
-	);
-}
-
-function hasOverlappingMessages(allMessages: Message[]): boolean {
-	const getMessageBounds = (message: Message) => ({
-		left: message.position.x - GRAPH_LAYOUT.overlapPadding,
-		right:
-			message.position.x +
-			GRAPH_LAYOUT.messageNodeWidth +
-			GRAPH_LAYOUT.overlapPadding,
-		top: message.position.y - GRAPH_LAYOUT.overlapPadding,
-		bottom:
-			message.position.y +
-			estimateMessageNodeHeight(message) +
-			GRAPH_LAYOUT.overlapPadding
-	});
-
-	for (let i = 0; i < allMessages.length; i += 1) {
-		for (let j = i + 1; j < allMessages.length; j += 1) {
-			const currentBounds = getMessageBounds(allMessages[i]);
-			const compareBounds = getMessageBounds(allMessages[j]);
-			const overlapsHorizontally =
-				currentBounds.left < compareBounds.right &&
-				currentBounds.right > compareBounds.left;
-			const overlapsVertically =
-				currentBounds.top < compareBounds.bottom &&
-				currentBounds.bottom > compareBounds.top;
-
-			if (overlapsHorizontally && overlapsVertically) {
-				return true;
-			}
-		}
-	}
-
-	return false;
-}
-
-function buildAutoLayout(
-	allCharacters: Character[],
-	allMessages: Message[],
-	allConnections: Connection[]
-): { characters: Character[]; messages: Message[] } {
-	if (allCharacters.length === 0 && allMessages.length === 0) {
-		return { characters: allCharacters, messages: allMessages };
-	}
-
-	const sortedCharacters = [...allCharacters].sort((a, b) => a.position.y - b.position.y);
-	const minCharacterX =
-		sortedCharacters.length > 0
-			? Math.min(...sortedCharacters.map((character) => character.position.x))
-			: GRAPH_LAYOUT.characterColumnX;
-	const characterColumnX = Math.max(60, Math.round(minCharacterX));
-	const messageColumnX = characterColumnX + GRAPH_LAYOUT.columnGap;
-
-	const minYSource = [...sortedCharacters.map((character) => character.position.y), ...allMessages.map((message) => message.position.y)];
-	const startY = Math.max(70, Math.round((minYSource.length > 0 ? Math.min(...minYSource) : 80) - 10));
-
-	const arrangedCharacterList = sortedCharacters.map((character, index) => ({
-		...character,
-		position: {
-			x: characterColumnX,
-			y: startY + index * GRAPH_LAYOUT.characterVerticalSpacing
-		}
-	}));
-	const characterIndexById = new Map(
-		arrangedCharacterList.map((character, index) => [character.id, index])
-	);
-	const laneCenter =
-		arrangedCharacterList.length > 1 ? (arrangedCharacterList.length - 1) / 2 : 0;
-
-	const flowOrderedMessages = analyzeMessageFlow(allMessages, allConnections).map(
-		(info) => info.message
-	);
-	const seenMessageIds = new Set(flowOrderedMessages.map((message) => message.id));
-	const orderedMessages = [
-		...flowOrderedMessages,
-		...allMessages.filter((message) => !seenMessageIds.has(message.id))
-	];
-
-	let nextMessageY = startY;
-	const arrangedMessageList = orderedMessages.map((message) => {
-		const laneIndex = message.characterId
-			? (characterIndexById.get(message.characterId) ?? 0)
-			: 0;
-		const laneOffset =
-			arrangedCharacterList.length > 1
-				? (laneIndex - laneCenter) * GRAPH_LAYOUT.speakerLaneOffset
-				: 0;
-		const replyOffset = message.replyTo ? GRAPH_LAYOUT.replyIndent : 0;
-		const yPosition = Math.round(nextMessageY);
-		nextMessageY += estimateMessageNodeHeight(message) + GRAPH_LAYOUT.messageBaseGap;
-
-		return {
-			...message,
-			position: {
-				x: Math.round(messageColumnX + laneOffset + replyOffset),
-				y: yPosition
-			}
-		};
-	});
-
-	const arrangedCharacterById = new Map(
-		arrangedCharacterList.map((character) => [character.id, character])
-	);
-	const arrangedMessageById = new Map(arrangedMessageList.map((message) => [message.id, message]));
-
-	return {
-		characters: allCharacters.map(
-			(character) => arrangedCharacterById.get(character.id) ?? character
-		),
-		messages: allMessages.map((message) => arrangedMessageById.get(message.id) ?? message)
-	};
-}
-
-function getMessageToMessageHandles(fromMessage: Message, toMessage: Message) {
-	const dx = toMessage.position.x - fromMessage.position.x;
-	const dy = toMessage.position.y - fromMessage.position.y;
-	const absDx = Math.abs(dx);
-	const absDy = Math.abs(dy);
-
-	if (absDx >= absDy) {
-		return {
-			sourceHandle: 'source-' + (dx >= 0 ? 'right' : 'left'),
-			targetHandle: 'target-' + (dx >= 0 ? 'left' : 'right')
-		};
-	}
-
-	return {
-		sourceHandle: 'source-' + (dy >= 0 ? 'bottom' : 'top'),
-		targetHandle: 'target-' + (dy >= 0 ? 'top' : 'bottom')
-	};
-}
-
-function getMessageToCharacterHandles(message: Message, character: Character) {
-	const dx = character.position.x - message.position.x;
-	const dy = character.position.y - message.position.y;
-	const absDx = Math.abs(dx);
-	const absDy = Math.abs(dy);
-
-	const sourceHandle =
-		absDx >= absDy
-			? 'source-' + (dx >= 0 ? 'right' : 'left')
-			: 'source-' + (dy >= 0 ? 'bottom' : 'top');
-
-	return {
-		sourceHandle,
-		targetHandle: 'target'
-	};
-}
-
 function wouldCreateFlowCycle(from: string, to: string, existingConnections: Connection[]): boolean {
 	if (from === to) return true;
 
@@ -377,13 +200,10 @@ function normalizeConnections(
 			const fromMessage = messageMap.get(conn.from);
 			const toCharacter = characterMap.get(conn.to);
 			if (fromMessage && toCharacter) {
-				const handles = getMessageToCharacterHandles(fromMessage, toCharacter);
 				addNormalizedConnection({
 					...conn,
 					from: fromMessage.id,
 					to: toCharacter.id,
-					sourceHandle: conn.sourceHandle ?? handles.sourceHandle,
-					targetHandle: conn.targetHandle ?? handles.targetHandle,
 					color: conn.color || toCharacter.roleColor
 				});
 				continue;
@@ -393,13 +213,10 @@ function normalizeConnections(
 			const legacyFromCharacter = characterMap.get(conn.from);
 			const legacyToMessage = messageMap.get(conn.to);
 			if (legacyFromCharacter && legacyToMessage) {
-				const handles = getMessageToCharacterHandles(legacyToMessage, legacyFromCharacter);
 				addNormalizedConnection({
 					...conn,
 					from: legacyToMessage.id,
 					to: legacyFromCharacter.id,
-					sourceHandle: handles.sourceHandle,
-					targetHandle: handles.targetHandle,
 					color: conn.color || legacyFromCharacter.roleColor
 				});
 			}
@@ -413,13 +230,10 @@ function normalizeConnections(
 			if (conn.type === 'flow' && wouldCreateFlowCycle(fromMessage.id, toMessage.id, normalized)) {
 				continue;
 			}
-			const handles = getMessageToMessageHandles(fromMessage, toMessage);
 			addNormalizedConnection({
 				...conn,
 				from: fromMessage.id,
-				to: toMessage.id,
-				sourceHandle: conn.sourceHandle ?? handles.sourceHandle,
-				targetHandle: conn.targetHandle ?? handles.targetHandle
+				to: toMessage.id
 			});
 		}
 	}
@@ -429,15 +243,12 @@ function normalizeConnections(
 		if (!message.characterId) continue;
 		const character = characterMap.get(message.characterId);
 		if (!character) continue;
-		const handles = getMessageToCharacterHandles(message, character);
 		addNormalizedConnection({
 			id: `conn-assign-${message.id}-${character.id}`,
 			from: message.id,
 			to: character.id,
 			type: 'assignment',
-			color: character.roleColor,
-			sourceHandle: handles.sourceHandle,
-			targetHandle: handles.targetHandle
+			color: character.roleColor
 		});
 	}
 
@@ -445,15 +256,12 @@ function normalizeConnections(
 	for (const message of allMessages) {
 		if (!message.replyTo || !messageMap.has(message.replyTo) || message.replyTo === message.id) continue;
 		const targetMessage = messageMap.get(message.replyTo)!;
-		const handles = getMessageToMessageHandles(message, targetMessage);
 		addNormalizedConnection({
 			id: `conn-reply-${message.id}-${targetMessage.id}`,
 			from: message.id,
 			to: targetMessage.id,
 			type: 'reply',
-			color: '#94a3b8',
-			sourceHandle: handles.sourceHandle,
-			targetHandle: handles.targetHandle
+			color: '#94a3b8'
 		});
 	}
 
@@ -472,32 +280,26 @@ export async function initializeStore() {
 			data.messages && data.messages.length > 0 ? data.messages : demoMessages;
 		const loadedConnections =
 			data.connections && data.connections.length > 0 ? data.connections : demoConnections;
-		const arrangedLoadedGraph = buildAutoLayout(
-			loadedCharacters,
-			loadedMessages,
-			loadedConnections
-		);
 		const normalizedConnections = normalizeConnections(
 			loadedConnections,
-			arrangedLoadedGraph.characters,
-			arrangedLoadedGraph.messages
+			loadedCharacters,
+			loadedMessages
 		);
 
-		characters.set(arrangedLoadedGraph.characters);
-		messages.set(arrangedLoadedGraph.messages);
+		characters.set(loadedCharacters);
+		messages.set(loadedMessages);
 		connections.set(normalizedConnections);
 		
 		customizeSettings.set(mergeCustomizationSettings(data.customizeSettings));
 	} catch (error) {
 		console.error('Failed to load from IndexedDB, using demo data:', error);
-		const arrangedDemoGraph = buildAutoLayout(demoCharacters, demoMessages, demoConnections);
-		characters.set(arrangedDemoGraph.characters);
-		messages.set(arrangedDemoGraph.messages);
+		characters.set(demoCharacters);
+		messages.set(demoMessages);
 		connections.set(
 			normalizeConnections(
 				demoConnections,
-				arrangedDemoGraph.characters,
-				arrangedDemoGraph.messages
+				demoCharacters,
+				demoMessages
 			)
 		);
 		customizeSettings.set(defaultCustomizationSettings);
@@ -506,38 +308,8 @@ export async function initializeStore() {
 	isInitialized.set(true);
 }
 
-export function loadLongDemoConversation() {
-	const clonedCharacters = demoCharacters.map((character) => ({
-		...character,
-		position: { ...character.position }
-	}));
-	const clonedMessages = demoMessages.map((message) => ({
-		...message,
-		position: { ...message.position }
-	}));
-	const arrangedDemoGraph = buildAutoLayout(clonedCharacters, clonedMessages, demoConnections);
-	const normalizedConnections = normalizeConnections(
-		demoConnections,
-		arrangedDemoGraph.characters,
-		arrangedDemoGraph.messages
-	);
-
-	characters.set(arrangedDemoGraph.characters);
-	messages.set(arrangedDemoGraph.messages);
-	connections.set(normalizedConnections);
-	nodeConnectionModes.set({});
-	selectedElement.set(clonedMessages[0]?.id ?? null);
-	previewState.set('preview');
-}
-
 // UI state stores
-export const selectedTool = writable<Tool>('select');
-export const selectedElement = writable<string | null>(null);
 export const editingCharacter = writable<string | null>(null);
-export const connectionMode = writable<'flow' | 'reply'>('flow');
-
-// Per-node connection modes
-export const nodeConnectionModes = writable<Record<string, 'flow' | 'reply'>>({});
 
 // Preview state stores
 export const previewState = writable<PreviewState>('preview');
@@ -597,34 +369,7 @@ export const getConnectionsForElement = (elementId: string) =>
 		$connections.filter((c) => c.from === elementId || c.to === elementId)
 	);
 
-export function autoArrangeGraph(options: { force?: boolean } = { force: true }): boolean {
-	const allCharacters = get(characters);
-	const allMessages = get(messages);
-	const allConnections = get(connections);
-	const force = options.force ?? true;
-
-	if (allCharacters.length === 0 && allMessages.length === 0) {
-		return false;
-	}
-
-	if (!force && !hasOverlappingMessages(allMessages)) {
-		return false;
-	}
-
-	const arrangedGraph = buildAutoLayout(allCharacters, allMessages, allConnections);
-	const normalizedConnections = normalizeConnections(
-		allConnections,
-		arrangedGraph.characters,
-		arrangedGraph.messages
-	);
-
-	characters.set(arrangedGraph.characters);
-	messages.set(arrangedGraph.messages);
-	connections.set(normalizedConnections);
-	return true;
-}
-
-function normalizeCurrentGraph() {
+function normalizeCurrentConnections() {
 	const allCharacters = get(characters);
 	const allMessages = get(messages);
 	const allConnections = get(connections);
@@ -662,7 +407,7 @@ export function applyConversationQAFix(action: ConversationFixAction): number {
 				})
 			);
 		}
-		normalizeCurrentGraph();
+		normalizeCurrentConnections();
 		propagateSpeakerAssignments();
 	} else if (action === 'remove_invalid_replies') {
 		const existingMessageMap = new Map(get(messages).map((message) => [message.id, message]));
@@ -675,9 +420,9 @@ export function applyConversationQAFix(action: ConversationFixAction): number {
 				return message;
 			})
 		);
-		normalizeCurrentGraph();
+		normalizeCurrentConnections();
 	} else if (action === 'repair_assignment_edges' || action === 'dedupe_connections') {
-		normalizeCurrentGraph();
+		normalizeCurrentConnections();
 	}
 
 	const afterReport = analyzeConversationQA(
@@ -713,10 +458,7 @@ export function sendMessageFromPreview(input: {
 		id,
 		characterId: resolvedCharacterId ?? undefined,
 		text,
-		position: {
-			x: GRAPH_LAYOUT.characterColumnX + GRAPH_LAYOUT.columnGap,
-			y: 100 + allMessages.length * GRAPH_LAYOUT.newMessageVerticalSpacing
-		},
+		position: { x: 0, y: 0 },
 		timestamp: new Date().toISOString()
 	};
 
@@ -787,9 +529,7 @@ export function sendMessageFromPreview(input: {
 
 	messages.set(nextMessages);
 	connections.set(normalizedConnections);
-	selectedElement.set(id);
 	propagateSpeakerAssignments();
-	autoArrangeGraph({ force: true });
 	return id;
 }
 
@@ -804,30 +544,6 @@ export function addCharacter(character: Omit<Character, 'id'>): string {
 export function updateCharacter(id: string, updates: Partial<Character>) {
 	characters.update((chars) =>
 		chars.map((char) => (char.id === id ? { ...char, ...updates } : char))
-	);
-}
-
-export function updateCharacterPosition(id: string, position: { x: number; y: number }) {
-	let changed = false;
-	characters.update((chars) =>
-		chars.map((char) => {
-			if (char.id !== id) return char;
-			if (char.position.x === position.x && char.position.y === position.y) {
-				return char;
-			}
-			changed = true;
-			return { ...char, position };
-		})
-	);
-	if (changed) {
-		// Recalculate connection handles for edges involving this character.
-		recalculateHandlesForNode(id);
-	}
-}
-
-export function updateCharacterRotation(id: string, rotation: number) {
-	characters.update((chars) =>
-		chars.map((char) => (char.id === id ? { ...char, rotation } : char))
 	);
 }
 
@@ -867,67 +583,6 @@ export function updateMessage(id: string, updates: Partial<Message>, skipPropaga
 	if (shouldPropagate) {
 		propagateSpeakerAssignments();
 	}
-}
-
-export function updateMessagePosition(id: string, position: { x: number; y: number }) {
-	let changed = false;
-	messages.update((msgs) =>
-		msgs.map((msg) => {
-			if (msg.id !== id) return msg;
-			if (msg.position.x === position.x && msg.position.y === position.y) {
-				return msg;
-			}
-			changed = true;
-			return { ...msg, position };
-		})
-	);
-	if (changed) {
-		recalculateHandlesForNode(id);
-	}
-}
-
-export function updateMessageRotation(id: string, rotation: number) {
-	messages.update((msgs) => msgs.map((msg) => (msg.id === id ? { ...msg, rotation } : msg)));
-}
-
-// Helper to recompute optimal handles for existing connections when nodes move
-function recalculateHandlesForNode(nodeId: string) {
-	const chars = get(characters);
-	const msgs = get(messages);
-	const charsById = new Map(chars.map((character) => [character.id, character]));
-	const msgsById = new Map(msgs.map((message) => [message.id, message]));
-
-	connections.update((conns) => {
-		let changed = false;
-		const nextConnections = conns.map((conn) => {
-			// Only adjust flow edges or assignment edges where dynamic positioning matters
-			if (conn.type === 'flow' && (conn.from === nodeId || conn.to === nodeId)) {
-				const fromMsg = msgsById.get(conn.from);
-				const toMsg = msgsById.get(conn.to);
-				if (fromMsg && toMsg) {
-					const { sourceHandle: newSourceHandle, targetHandle: newTargetHandle } =
-						getMessageToMessageHandles(fromMsg, toMsg);
-					if (newSourceHandle !== conn.sourceHandle || newTargetHandle !== conn.targetHandle) {
-						changed = true;
-						return { ...conn, sourceHandle: newSourceHandle, targetHandle: newTargetHandle };
-					}
-				}
-			} else if (conn.type === 'assignment' && (conn.from === nodeId || conn.to === nodeId)) {
-				// Assignment is normalized as message -> character.
-				const msg = msgsById.get(conn.from);
-				const char = charsById.get(conn.to);
-				if (msg && char) {
-					const { sourceHandle, targetHandle } = getMessageToCharacterHandles(msg, char);
-					if (sourceHandle !== conn.sourceHandle || targetHandle !== conn.targetHandle) {
-						changed = true;
-						return { ...conn, sourceHandle, targetHandle };
-					}
-				}
-			}
-			return conn;
-		});
-		return changed ? nextConnections : conns;
-	});
 }
 
 // Automatically propagate speaker assignments along flow connections
@@ -1085,202 +740,46 @@ export function deleteConnection(id: string) {
 }
 
 // Utility actions
-export function addCharacterAtPosition(position: { x: number; y: number }): string {
-	const chars = get(characters);
-	const adjustedPosition = {
-		x: Math.max(50, position.x + (Math.random() - 0.5) * 40),
-		y: Math.max(50, position.y + (Math.random() - 0.5) * 40)
-	};
-
-	const colors = ['#ff6f3b', '#0ea5a4', '#2563eb', '#f59e0b', '#ef4444', '#14b8a6', '#0f766e', '#64748b'];
-	const avatarStyles = ['bottts', 'avataaars', 'pixel-art', 'lorelei', 'notionists'];
-	const username = `User ${chars.length + 1}`;
-	const randomStyle = avatarStyles[Math.floor(Math.random() * avatarStyles.length)];
-	const randomSeed = Math.random().toString(36).substring(7);
-	
-	const newCharacter = {
-		username,
-		avatar: `https://api.dicebear.com/7.x/${randomStyle}/svg?seed=${randomSeed}&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90`,
-		roleColor: colors[Math.floor(Math.random() * colors.length)],
-		position: adjustedPosition
-	};
-
-	const id = addCharacter(newCharacter);
-	selectedElement.set(id);
-	autoArrangeGraph({ force: false });
-	return id;
-}
-
-export function addMessageAtPosition(position: { x: number; y: number }): string {
-	const msgs = get(messages);
-	const adjustedPosition = {
-		x: Math.max(50, position.x + (Math.random() - 0.5) * 40),
-		y: Math.max(50, position.y + (Math.random() - 0.5) * 40)
-	};
-
-	const newMessage = {
-		characterId: undefined,
-		text: `Hello, this is message ${msgs.length + 1}!`,
-		position: adjustedPosition,
-		timestamp: new Date().toISOString()
-	};
-
-	const id = addMessage(newMessage);
-	selectedElement.set(id);
-	autoArrangeGraph({ force: false });
-	return id;
-}
-
 export function addMessageForCharacter(characterId: string): string {
 	const chars = get(characters);
 	const msgs = get(messages);
 	const character = chars.find((c) => c.id === characterId);
 	if (!character) return '';
 
-	const characterMessages = msgs.filter((m) => m.characterId === characterId);
-	const baseX = character.position.x + 360;
-	const baseY =
-		character.position.y + characterMessages.length * GRAPH_LAYOUT.newMessageVerticalSpacing;
-
 	const newMessage = {
 		characterId,
 		text: 'New message...',
-		position: { x: baseX, y: baseY },
+		position: { x: 0, y: 0 },
 		timestamp: new Date().toISOString()
 	};
 
 	const id = addMessage(newMessage);
-	const { sourceHandle, targetHandle } = getMessageToCharacterHandles(
-		{ ...newMessage, id },
-		character
-	);
 	addConnection({
 		from: id,
 		to: character.id,
 		type: 'assignment',
-		color: character.roleColor,
-		sourceHandle,
-		targetHandle
+		color: character.roleColor
 	});
-	selectedElement.set(id);
-	propagateSpeakerAssignments();
-	autoArrangeGraph({ force: false });
-	return id;
-}
 
-export function createConnection(
-	from: string,
-	to: string,
-	sourceHandle?: string,
-	targetHandle?: string
-) {
-	const conns = get(connections);
-	const chars = get(characters);
-	const msgs = get(messages);
-	const nodeModes = get(nodeConnectionModes);
-	const mode = nodeModes[from] || 'flow';
-
-	if (from === to) return;
-
-	const fromCharacter = chars.find((c) => c.id === from);
-	const toCharacter = chars.find((c) => c.id === to);
-	const fromMessage = msgs.find((m) => m.id === from);
-	const toMessage = msgs.find((m) => m.id === to);
-
-	let type: 'flow' | 'assignment' | 'reply' = 'flow';
-	let color = 'hsl(var(--muted-foreground))';
-	let finalFrom = from;
-	let finalTo = to;
-	let finalSourceHandle = sourceHandle;
-	let finalTargetHandle = targetHandle;
-
-	// Undirected assignment: message <-> speaker gets normalized to message -> speaker.
-	if ((fromMessage && toCharacter) || (toMessage && fromCharacter)) {
-		const isCanonicalDirection = Boolean(fromMessage && toCharacter);
-		const message = fromMessage ?? toMessage!;
-		const character = toCharacter ?? fromCharacter!;
-		type = 'assignment';
-		color = character.roleColor;
-		finalFrom = message.id;
-		finalTo = character.id;
-
-		if (message.characterId && message.characterId !== character.id) {
-			return;
-		}
-
-		const existingAssignment = conns.find(
-			(connection) => connection.type === 'assignment' && connection.from === message.id
+	// Add flow connection from the last message in order
+	if (msgs.length > 0) {
+		const allConnections = get(connections);
+		const orderedMessages = analyzeMessageFlow(msgs, allConnections).map(
+			(info) => info.message
 		);
-		if (existingAssignment && existingAssignment.to !== character.id) {
-			return;
-		}
-
-		updateMessage(message.id, { characterId: character.id });
-		const handles = getMessageToCharacterHandles(message, character);
-		finalSourceHandle = isCanonicalDirection ? sourceHandle ?? handles.sourceHandle : handles.sourceHandle;
-		finalTargetHandle = isCanonicalDirection ? targetHandle ?? handles.targetHandle : handles.targetHandle;
-	}
-	// Message to Message connections
-	else if (fromMessage && toMessage) {
-		const handles = getMessageToMessageHandles(fromMessage, toMessage);
-		finalSourceHandle = sourceHandle ?? handles.sourceHandle;
-		finalTargetHandle = targetHandle ?? handles.targetHandle;
-
-		if (mode === 'reply') {
-			type = 'reply';
-			color = '#94a3b8';
-			// Reply remains directional: source message replies to target message.
-			if (fromMessage.replyTo && fromMessage.replyTo !== toMessage.id) {
-				return;
-			}
-
-			const existingReplyEdge = conns.find(
-				(connection) => connection.type === 'reply' && connection.from === fromMessage.id
-			);
-			if (existingReplyEdge && existingReplyEdge.to !== toMessage.id) {
-				return;
-			}
-
-			updateMessage(fromMessage.id, { replyTo: toMessage.id }, true);
-		} else {
-			type = 'flow';
-			color = flowColors[Math.floor(Math.random() * flowColors.length)];
-			// Flow remains directional to preserve ordering semantics.
-			if (wouldCreateFlowCycle(fromMessage.id, toMessage.id, conns)) {
-				return;
-			}
+		const lastMessage = orderedMessages[orderedMessages.length - 1] ?? msgs[msgs.length - 1];
+		if (lastMessage) {
+			addConnection({
+				from: lastMessage.id,
+				to: id,
+				type: 'flow',
+				color: flowColors[msgs.length % flowColors.length]
+			});
 		}
 	}
-	// No speaker-speaker edges.
-	else {
-		return;
-	}
 
-	const exists = conns.some(
-		(c) =>
-			c.type === type && c.from === finalFrom && c.to === finalTo
-	);
-	if (exists) return;
-
-	addConnection({
-		from: finalFrom,
-		to: finalTo,
-		type,
-		color,
-		sourceHandle: finalSourceHandle,
-		targetHandle: finalTargetHandle
-	});
-
-	// After adding the connection, propagate speaker assignments along the flow
-	// This will auto-assign characters to unassigned messages following the flow
-	if (type === 'flow') {
-		propagateSpeakerAssignments();
-	} else if (type === 'assignment') {
-		// When assigning a character, also propagate downstream
-		propagateSpeakerAssignments();
-	}
-
-	autoArrangeGraph({ force: false });
+	propagateSpeakerAssignments();
+	return id;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -1499,28 +998,21 @@ export function importConversationFromJSON(payload: unknown) {
 		});
 	}
 
-	const arrangedImportedGraph = buildAutoLayout(
-		importedCharacters,
-		importedMessages,
-		importedConnections
-	);
 	const normalizedConnections = normalizeConnections(
 		importedConnections,
-		arrangedImportedGraph.characters,
-		arrangedImportedGraph.messages
+		importedCharacters,
+		importedMessages
 	);
 
-	characters.set(arrangedImportedGraph.characters);
-	messages.set(arrangedImportedGraph.messages);
+	characters.set(importedCharacters);
+	messages.set(importedMessages);
 	connections.set(normalizedConnections);
-	nodeConnectionModes.set({});
-	selectedElement.set(arrangedImportedGraph.messages[0]?.id ?? null);
 	previewState.set('preview');
 	propagateSpeakerAssignments();
 
 	return {
-		characters: arrangedImportedGraph.characters.length,
-		messages: arrangedImportedGraph.messages.length,
+		characters: importedCharacters.length,
+		messages: importedMessages.length,
 		connections: normalizedConnections.length
 	};
 }
@@ -1547,22 +1039,15 @@ export function importProjectData(payload: unknown) {
 		throw new Error('Project JSON must include at least one character or message.');
 	}
 
-	const arrangedProjectGraph = buildAutoLayout(
-		projectCharacters,
-		projectMessages,
-		projectConnections
-	);
 	const normalizedConnections = normalizeConnections(
 		projectConnections,
-		arrangedProjectGraph.characters,
-		arrangedProjectGraph.messages
+		projectCharacters,
+		projectMessages
 	);
 
-	characters.set(arrangedProjectGraph.characters);
-	messages.set(arrangedProjectGraph.messages);
+	characters.set(projectCharacters);
+	messages.set(projectMessages);
 	connections.set(normalizedConnections);
-	nodeConnectionModes.set({});
-	selectedElement.set(null);
 	previewState.set('preview');
 	propagateSpeakerAssignments();
 
@@ -1625,15 +1110,4 @@ export function handleTemplateSelect(template: any) {
 
 export function handleApplyCustomization(settings: Partial<CustomizationSettings>) {
 	customizeSettings.update((s) => ({ ...s, ...settings, resolution: 'vertical-1080x1920' }));
-}
-
-export function setConnectionMode(mode: 'flow' | 'reply') {
-	connectionMode.set(mode);
-}
-
-export function setNodeConnectionMode(nodeId: string, mode: 'flow' | 'reply') {
-	nodeConnectionModes.update(modes => ({
-		...modes,
-		[nodeId]: mode
-	}));
 }
