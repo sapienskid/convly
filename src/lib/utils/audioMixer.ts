@@ -180,10 +180,12 @@ export function createAudioMixer(options: AudioMixerOptions): AudioMixer {
 
 export function extractAudioEventsFromTimeline(timeline: AnimationTimeline): AudioEvent[] {
 	const events: AudioEvent[] = [];
+	const notificationTriggerField =
+		timeline.messageAnimationStyle === 'message-only' ? 'typingEnd' : 'start';
 
 	for (const entry of timeline.entries) {
 		events.push({
-			time: entry.start,
+			time: entry[notificationTriggerField],
 			type: 'notification',
 			characterId: entry.message.characterId
 		});
