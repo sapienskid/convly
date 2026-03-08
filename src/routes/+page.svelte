@@ -433,8 +433,9 @@
 
 			const previewContainer = await waitForLivePreviewElement();
 			const screenCaptureElement =
-				previewContainer.querySelector<HTMLElement>('[data-export-capture="app-content"]') ??
 				previewContainer.querySelector<HTMLElement>('[data-export-capture="screen"]') ??
+				previewContainer.querySelector<HTMLElement>('[data-export-capture="phone"]') ??
+				previewContainer.querySelector<HTMLElement>('[data-export-capture="app-content"]') ??
 				previewContainer;
 			const captureBackground =
 				getComputedStyle(screenCaptureElement).backgroundColor ||

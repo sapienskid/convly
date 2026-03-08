@@ -536,7 +536,14 @@ export class VideoExporter {
 				createContext(previewElement, {
 					width: captureWidth,
 					height: captureHeight,
-					scale: 1,
+					// Capture at (roughly) output pixel density to avoid icon/text distortion.
+					scale: Math.max(
+						1,
+						Math.min(
+							4,
+							Math.min(width / Math.max(1, captureWidth), height / Math.max(1, captureHeight))
+						)
+					),
 					backgroundColor,
 					timeout: 15000,
 					drawImageInterval: 0,
