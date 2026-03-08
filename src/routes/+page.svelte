@@ -429,9 +429,13 @@
 
 			const previewContainer = await waitForLivePreviewElement();
 			const screenCaptureElement =
-				previewContainer.querySelector<HTMLElement>('[data-export-capture="app-content"]') ??
 				previewContainer.querySelector<HTMLElement>('[data-export-capture="screen"]') ??
+				previewContainer.querySelector<HTMLElement>('[data-export-capture="app-content"]') ??
 				previewContainer;
+			const captureBackground =
+				getComputedStyle(screenCaptureElement).backgroundColor ||
+				$customizeSettings.backgroundColor ||
+				'#313338';
 
 			await videoExporter.initialize({
 				width: resolution.width,
@@ -442,7 +446,7 @@
 				animationSpeed: normalizedAnimationSpeed,
 				quality: $customizeSettings.quality,
 				channelName: exportChannelName,
-				backgroundColor: $customizeSettings.backgroundColor || '#313338',
+				backgroundColor: captureBackground,
 				outputFileStream: outputTarget.stream,
 				outputFileHandle: outputTarget.handle,
 				outputFileStreamMode: outputTarget.mode === 'none' ? undefined : outputTarget.mode,
@@ -1240,16 +1244,17 @@
 			<div class="flex flex-1 items-center justify-center p-8 bg-gradient-to-b from-transparent to-accent/5">
 				<div class="flex flex-col items-center gap-4">
 					<div bind:this={livePreviewCaptureElement}>
-						<PhonePreview
-							characters={$characters}
-							messages={$messages}
-							connections={$connections}
-							previewState={$previewState}
-							isGenerating={$isGenerating}
-							customizeSettings={$customizeSettings}
-							currentTime={videoCurrentTime}
-							interactive={true}
-							onSendMessage={handlePreviewSendMessage}
+							<PhonePreview
+								characters={$characters}
+								messages={$messages}
+								connections={$connections}
+								previewState={$previewState}
+								isGenerating={$isGenerating}
+								isExporting={isExporting}
+								customizeSettings={$customizeSettings}
+								currentTime={videoCurrentTime}
+								interactive={true}
+								onSendMessage={handlePreviewSendMessage}
 						/>
 					</div>
 					

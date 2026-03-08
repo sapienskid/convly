@@ -22,6 +22,7 @@
 		connections: Connection[];
 		previewState: 'preview' | 'loading' | 'video';
 		isGenerating?: boolean;
+		isExporting?: boolean;
 		customizeSettings?: Partial<CustomizationSettings>;
 		currentTime?: number;
 		interactive?: boolean;
@@ -37,6 +38,7 @@
 		messages,
 		connections,
 		previewState,
+		isExporting = false,
 		customizeSettings = {},
 		currentTime = 0,
 		interactive = false,
@@ -394,26 +396,6 @@
 		return showTimestamps && chatPlatform !== 'discord' && chatPlatform !== 'messenger';
 	}
 
-	function getStatusBarStyle(): string {
-		if (chatPlatform === 'whatsapp') {
-			return 'background-color: #00a884;';
-		}
-		if (chatPlatform === 'messenger') {
-			return 'background-color: #ffffff;';
-		}
-		if (chatPlatform === 'telegram') {
-			return 'background-color: #517da2;';
-		}
-		return 'background-color: #1e1f22;';
-	}
-
-	function getStatusBarTextStyle(): string {
-		if (chatPlatform === 'messenger') {
-			return 'color: #050505;';
-		}
-		return 'color: #f8fafc;';
-	}
-
 	function getHeaderContainerStyle(): string {
 		if (chatPlatform === 'whatsapp') {
 			return 'background-color: #f0f2f5; border-bottom-color: #d9dce2;';
@@ -737,29 +719,11 @@
 	<div class="w-80 h-[600px] bg-foreground rounded-[2.5rem] p-2 shadow-2xl">
 		<!-- Screen -->
 		<div
-			class="w-full h-full bg-background rounded-[2rem] overflow-hidden relative"
+			class="w-full h-full bg-background overflow-hidden relative {isExporting ? '' : 'rounded-[2rem]'}"
 			data-export-capture="screen"
 		>
-			<!-- Status Bar -->
-			<div
-				class="h-6 flex items-center justify-between px-6 text-xs"
-				style={`${getStatusBarStyle()} ${getStatusBarTextStyle()}`}
-			>
-				<span>9:41</span>
-				<div class="flex items-center space-x-1">
-					<div class="flex space-x-1">
-						<div class="w-1 h-1 rounded-full" style={getStatusBarTextStyle()}></div>
-						<div class="w-1 h-1 rounded-full" style={getStatusBarTextStyle()}></div>
-						<div class="w-1 h-1 rounded-full opacity-30" style={getStatusBarTextStyle()}></div>
-					</div>
-					<div class="w-6 h-3 border rounded-sm" style={getStatusBarTextStyle()}>
-						<div class="w-4 h-1.5 rounded-sm m-0.5" style={getStatusBarTextStyle()}></div>
-					</div>
-				</div>
-			</div>
-
 			<!-- Content -->
-			<div class="h-[calc(100%-24px)]" data-export-capture="app-content">
+			<div class="h-full" data-export-capture="app-content">
 				{#if previewState === 'preview' || previewState === 'video'}
 						<!-- Chat Preview -->
 						<div class="h-full flex flex-col" style="background-color: {backgroundColor}; font-family: {fontFamilyStack};">

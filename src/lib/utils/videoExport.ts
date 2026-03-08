@@ -655,17 +655,18 @@ export class VideoExporter {
 			let drawX = 0;
 			let drawY = 0;
 
-			// Fill the entire export frame (screen-recorded look) rather than letterboxing.
+			// Preserve the entire captured preview without cropping so platform
+			// paddings/header/composer framing stay consistent in exported video.
 			if (sourceAspect > targetAspect) {
-				drawHeight = height;
-				drawWidth = Math.max(1, Math.round(height * sourceAspect));
-				drawX = Math.round((width - drawWidth) / 2);
-				drawY = 0;
-			} else {
 				drawWidth = width;
 				drawHeight = Math.max(1, Math.round(width / sourceAspect));
 				drawX = 0;
 				drawY = Math.round((height - drawHeight) / 2);
+			} else {
+				drawHeight = height;
+				drawWidth = Math.max(1, Math.round(height * sourceAspect));
+				drawX = Math.round((width - drawWidth) / 2);
+				drawY = 0;
 			}
 
 			const createCaptureContext = () =>
