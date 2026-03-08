@@ -43,6 +43,12 @@
 	// Prompt view
 	let generatedPrompt = $state('');
 	let copied = $state(false);
+	const activeScene = $derived.by(() => scenes.find((scene) => scene.id === activeSceneId) ?? null);
+	const allCharactersSelected = $derived.by(
+		() =>
+			characters.length > 0 &&
+			characters.every((character) => selectedCharacterIds.includes(character.id))
+	);
 
 	function resetForm() {
 		sceneName = '';
@@ -73,6 +79,10 @@
 		mode = 'prompt';
 	}
 
+	function handleRegeneratePrompt() {
+		generatedPrompt = onGeneratePrompt();
+	}
+
 	async function copyToClipboard() {
 		try {
 			await navigator.clipboard.writeText(generatedPrompt);
@@ -91,13 +101,33 @@
 		}
 	}
 
-	function selectAllCharacters() {
-		selectedCharacterIds = characters.map(c => c.id);
+	function toggleSelectAllCharacters() {
+		if (allCharactersSelected) {
+			selectedCharacterIds = [];
+			return;
+		}
+		selectedCharacterIds = characters.map((character) => character.id);
 	}
 
 	function getSceneCharacters(scene: Scene): Character[] {
 		return characters.filter(c => scene.characterIds.includes(c.id));
 	}
+
+	function formatSceneDate(value: string): string {
+		try {
+			return new Date(value).toLocaleString();
+		} catch {
+			return value;
+		}
+	}
+
+	$effect(() => {
+		const validCharacterIds = new Set(characters.map((character) => character.id));
+		const filtered = selectedCharacterIds.filter((id) => validCharacterIds.has(id));
+		if (filtered.length !== selectedCharacterIds.length) {
+			selectedCharacterIds = filtered;
+		}
+	});
 </script>
 
 <Dialog {open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
@@ -123,7 +153,7 @@
 						</Button>
 						<Button variant="outline" onclick={handleGeneratePrompt} disabled={characters.length === 0}>
 							<Sparkles class="mr-2 h-4 w-4" />
-							AI Prompt
+							Scene Prompt
 						</Button>
 					</div>
 
@@ -147,6 +177,11 @@
 										<p class="text-xs text-muted-foreground truncate">
 											{scene.description || 'No description'}
 										</p>
+										{#if scene.aura}
+											<p class="mt-1 truncate text-[11px] text-muted-foreground">
+												Context: {scene.aura}
+											</p>
+										{/if}
 										<div class="mt-1.5 flex items-center gap-1">
 											{#each sceneChars.slice(0, 4) as char}
 												<Avatar class="h-5 w-5 border border-background">
@@ -163,6 +198,9 @@
 												{sceneChars.length} char{sceneChars.length !== 1 ? 's' : ''}
 											</span>
 										</div>
+										<p class="mt-1 text-[10px] text-muted-foreground">
+											Updated: {formatSceneDate(scene.updatedAt)}
+										</p>
 									</div>
 									<div class="flex items-center gap-1">
 										<Button
@@ -210,7 +248,7 @@
 						</div>
 
 						<div class="space-y-2">
-							<Label for="scene-description">Description</Label>
+							<Label for="scene-description">Scene Description</Label>
 							<Textarea
 								id="scene-description"
 								bind:value={sceneDescription}
@@ -232,8 +270,8 @@
 						<div class="space-y-2">
 							<div class="flex items-center justify-between">
 								<Label>Select Characters</Label>
-								<Button variant="ghost" size="sm" onclick={selectAllCharacters} class="h-6 text-xs">
-									Select All
+								<Button variant="ghost" size="sm" onclick={toggleSelectAllCharacters} class="h-6 text-xs">
+									{allCharactersSelected ? 'Deselect All' : 'Select All'}
 								</Button>
 							</div>
 							<div class="max-h-[150px] space-y-1.5 overflow-y-auto rounded-lg border border-border/70 bg-muted/20 p-2">
@@ -253,6 +291,7 @@
 												checked={selectedCharacterIds.includes(char.id)}
 												class="h-3.5 w-3.5 rounded border-border"
 												onclick={(e) => e.stopPropagation()}
+												onchange={() => toggleCharacter(char.id)}
 											/>
 											<Avatar class="h-6 w-6">
 												<AvatarImage src={char.avatar} alt={char.username} />
@@ -284,21 +323,43 @@
 							<Button variant="ghost" size="icon" onclick={() => mode = 'list'}>
 								<X class="h-4 w-4" />
 							</Button>
-							<span class="text-sm font-medium">AI Prompt</span>
+							<span class="text-sm font-medium">Scene Prompt</span>
 						</div>
-						<Button variant="outline" size="sm" onclick={copyToClipboard}>
-							{#if copied}
-								<Check class="mr-2 h-4 w-4" />
-								Copied!
-							{:else}
-								<Copy class="mr-2 h-4 w-4" />
-								Copy
-							{/if}
-						</Button>
+						<div class="flex items-center gap-2">
+							<Button variant="outline" size="sm" onclick={handleRegeneratePrompt}>
+								<Sparkles class="mr-2 h-4 w-4" />
+								Regenerate
+							</Button>
+							<Button variant="outline" size="sm" onclick={copyToClipboard}>
+								{#if copied}
+									<Check class="mr-2 h-4 w-4" />
+									Copied!
+								{:else}
+									<Copy class="mr-2 h-4 w-4" />
+									Copy
+								{/if}
+							</Button>
+						</div>
 					</div>
 
-					<div class="rounded-lg border border-border bg-muted/30 p-4 max-h-[400px] overflow-y-auto">
-						<pre class="whitespace-pre-wrap text-xs font-mono text-muted-foreground">{generatedPrompt}</pre>
+					<div class="rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+						<p class="font-medium text-foreground">Current Scene Details</p>
+						<p class="mt-1">Name: {activeScene?.name ?? 'None selected'}</p>
+						<p>Description: {activeScene?.description || 'N/A'}</p>
+						<p>Context: {activeScene?.aura || 'N/A'}</p>
+						<p>Characters: {activeScene ? activeScene.characterIds.length : characters.length}</p>
+					</div>
+
+					<div class="rounded-lg border border-border bg-muted/30 p-3">
+						<Label for="scene-prompt-editor" class="mb-2 block text-xs font-medium text-foreground">
+							Editable Prompt
+						</Label>
+						<Textarea
+							id="scene-prompt-editor"
+							bind:value={generatedPrompt}
+							rows={16}
+							class="font-mono text-xs leading-relaxed"
+						/>
 					</div>
 				</div>
 			{/if}

@@ -1333,12 +1333,15 @@ export function generateScenePrompt(): string {
 			const aura = char.aura;
 			if (aura && aura.description) {
 				return `- ${char.username}
+  Character ID: ${char.id}
   Personality: ${aura.description}
   Tone: ${aura.tone}
   Speaking Style: ${aura.speakingStyle}
   Keywords: ${aura.keywords.join(', ')}`;
 			}
-			return `- ${char.username} (no personality defined)`;
+			return `- ${char.username}
+  Character ID: ${char.id}
+  Personality: no personality defined`;
 		})
 		.join('\n');
 
@@ -1357,48 +1360,71 @@ export function generateScenePrompt(): string {
 		.filter(msg => sceneMessageIds.has(msg.characterId || ''))
 		.slice(0, 5); // Limit to 5 messages max
 
-	// Build a map of message ID to index for replyTo conversion
-	const messageIdToIndex = new Map<string, number>();
-	sceneMessages.forEach((msg, idx) => messageIdToIndex.set(msg.id, idx));
+	const escapeJsonString = (value: string) => value.replace(/"/g, '\\"').replace(/\n/g, ' ');
+	const firstCharacter = sceneCharacters[0];
 
 	const conversationExample = sceneMessages
 		.map((msg, index) => {
 			const char = sceneCharacters.find(c => c.id === msg.characterId);
-			const speaker = char ? char.username : 'Unknown';
-			// Convert replyTo ID to array index
-			let replyInfo = '';
-			if (msg.replyTo) {
-				const replyIndex = messageIdToIndex.get(msg.replyTo);
-				if (replyIndex !== undefined) {
-					replyInfo = `, "replyTo": ${replyIndex}`;
-				}
-			}
-			return `  { "speaker": "${speaker}", "text": "${msg.text.replace(/"/g, '\\"').replace(/\n/g, ' ')}"${replyInfo} }`;
+			const speaker = char?.username || firstCharacter?.username || 'Unknown';
+			const characterId = char?.id || firstCharacter?.id || 'char-unknown';
+			const messageId = msg.id || `msg-example-${index + 1}`;
+			const timestamp =
+				msg.timestamp || new Date(Date.now() + index * 60_000).toISOString();
+			const replyInfo = msg.replyTo ? `,\n      "replyTo": "${msg.replyTo}"` : '';
+
+			return `    {
+      "id": "${messageId}",
+      "speaker": "${escapeJsonString(speaker)}",
+      "text": "${escapeJsonString(msg.text)}",
+      "timestamp": "${timestamp}",
+      "characterId": "${characterId}"${replyInfo}
+    }`;
 		})
 		.join(',\n');
 
-	return `# AI Dialogue Generation Prompt
+	return `# Scene Dialogue Prompt
 
 ## Characters
 ${characterList}
 ${sceneContext}
 
 ## Output Format
-[
-  { "speaker": "CharacterName", "text": "message" },
-  { "speaker": "CharacterName", "text": "message", "replyTo": 0 }
-]
+{
+  "conversation": [
+    {
+      "id": "msg-unique-id-1",
+      "speaker": "CharacterName",
+      "text": "message",
+      "timestamp": "2026-03-08T09:00:00.000Z",
+      "characterId": "char-id-for-speaker"
+    },
+    {
+      "id": "msg-unique-id-2",
+      "speaker": "CharacterName",
+      "text": "message",
+      "timestamp": "2026-03-08T09:01:00.000Z",
+      "characterId": "char-id-for-speaker",
+      "replyTo": "msg-unique-id-1"
+    }
+  ]
+}
 
 ## Example Conversation
-[
+{
+  "conversation": [
 ${conversationExample}
-]
+  ]
+}
 
-## Instructions
+## Prompt Instructions
 - Generate natural dialogue based on character personalities and scene context
 - Each "speaker" must match exactly one character name above
-- Use "replyTo" with the array index of the message being replied to
-- Return ONLY the JSON array, no other text`;
+- Each "characterId" must match the speaker's Character ID listed above
+- Include "id", "speaker", "text", "timestamp", and "characterId" on every message
+- Use ISO-8601 timestamps and keep messages in chronological order
+- Use "replyTo" ONLY as a message ID string (not an index)
+- Return ONLY valid JSON object with top-level "conversation" array, no markdown or extra text`;
 }
 
 export function updateCharacterAura(id: string, aura: CharacterAura) {
