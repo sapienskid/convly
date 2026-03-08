@@ -197,14 +197,16 @@
 
 	const fontFamily = $derived(customizeSettings.fontFamily || platformTheme.fontFamily);
 	const fontFamilyStack = $derived.by(() => {
+		const emojiFallback =
+			"'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', 'Noto Emoji', sans-serif";
 		const stacks: Record<string, string> = {
-			'Instrument Sans': "'Instrument Sans', sans-serif",
-			'Bricolage Grotesque': "'Bricolage Grotesque', sans-serif",
-			Manrope: "'Manrope', sans-serif",
-			Archivo: "'Archivo', sans-serif",
-			'JetBrains Mono': "'JetBrains Mono', monospace"
+			'Instrument Sans': `'Instrument Sans', ${emojiFallback}`,
+			'Bricolage Grotesque': `'Bricolage Grotesque', ${emojiFallback}`,
+			Manrope: `'Manrope', ${emojiFallback}`,
+			Archivo: `'Archivo', ${emojiFallback}`,
+			'JetBrains Mono': `'JetBrains Mono', 'Noto Color Emoji', 'Noto Emoji', monospace`
 		};
-		return stacks[fontFamily] ?? "'Instrument Sans', sans-serif";
+		return stacks[fontFamily] ?? `'Instrument Sans', ${emojiFallback}`;
 	});
 	const fontSize = $derived(customizeSettings.fontSize || 16);
 	const fontWeight = $derived(customizeSettings.fontWeight || 'normal');
@@ -525,16 +527,17 @@
 		isPrimarySpeaker: boolean,
 		replyColor: string
 	): string {
+		const shell = 'border-radius: 10px; overflow: hidden; background-clip: padding-box;';
 		if (chatPlatform === 'discord') {
-			return `border-left: 4px solid ${replyColor}; background: linear-gradient(90deg, ${replyColor}1f 0%, rgba(79, 84, 92, 0.06) 100%);`;
+			return `${shell} border-left: 4px solid ${replyColor}; background: linear-gradient(90deg, ${replyColor}1f 0%, rgba(79, 84, 92, 0.14) 100%);`;
 		}
 		if (chatPlatform === 'whatsapp') {
-			return `border-left: 3px solid ${replyColor}; background-color: ${isPrimarySpeaker ? 'rgba(0, 168, 132, 0.14)' : 'rgba(17, 27, 33, 0.08)'};`;
+			return `${shell} border-left: 3px solid ${replyColor}; background-color: ${isPrimarySpeaker ? 'rgba(0, 168, 132, 0.14)' : 'rgba(17, 27, 33, 0.08)'};`;
 		}
 		if (chatPlatform === 'messenger') {
-			return `border-left: 3px solid ${replyColor}; background-color: ${isPrimarySpeaker ? 'rgba(0, 132, 255, 0.16)' : 'rgba(17, 24, 39, 0.08)'};`;
+			return `${shell} border-left: 3px solid ${replyColor}; background-color: ${isPrimarySpeaker ? 'rgba(0, 132, 255, 0.16)' : 'rgba(17, 24, 39, 0.08)'};`;
 		}
-		return `border-left: 3px solid ${replyColor}; background-color: ${isPrimarySpeaker ? 'rgba(42, 171, 238, 0.16)' : 'rgba(23, 33, 43, 0.08)'};`;
+		return `${shell} border-left: 3px solid ${replyColor}; background-color: ${isPrimarySpeaker ? 'rgba(42, 171, 238, 0.16)' : 'rgba(23, 33, 43, 0.08)'};`;
 	}
 
 	function getReplyPreviewTextStyle(): string {
@@ -558,21 +561,21 @@
 
 		if (chatPlatform === 'whatsapp') {
 			const bubbleColor = isPrimarySpeaker ? '#d9fdd3' : '#ffffff';
-			const radius = isPrimarySpeaker ? '14px 6px 14px 14px' : '6px 14px 14px 14px';
-			return `color: #111b21; ${base} background-color: ${bubbleColor}; border-radius: ${radius}; border: 1px solid rgba(15, 23, 42, 0.08); padding: ${Math.round(messagePadding / 2)}px ${Math.round(messagePadding * 0.75)}px; display: inline-block; max-width: 100%; box-shadow: 0 1px 0 rgba(17, 27, 33, 0.06);`;
+			const radius = '14px';
+			return `color: #111b21; ${base} background-color: ${bubbleColor}; border-radius: ${radius}; border: 1px solid rgba(15, 23, 42, 0.08); padding: ${Math.round(messagePadding / 2)}px ${Math.round(messagePadding * 0.75)}px; display: inline-block; max-width: 100%; overflow: hidden; background-clip: padding-box;`;
 		}
 
 		if (chatPlatform === 'messenger') {
 			const bubbleBackground = isPrimarySpeaker ? '#0084ff' : '#E4E6EB';
 			const bubbleText = isPrimarySpeaker ? '#ffffff' : '#050505';
-			const radius = isPrimarySpeaker ? '18px 18px 6px 18px' : '18px 18px 18px 6px';
-			return `color: ${bubbleText}; ${base} background-color: ${bubbleBackground}; border-radius: ${radius}; border: none; padding: ${Math.round(messagePadding / 2)}px ${Math.round(messagePadding * 0.75)}px; display: inline-block; max-width: 100%;`;
+			const radius = '18px';
+			return `color: ${bubbleText}; ${base} background-color: ${bubbleBackground}; border-radius: ${radius}; border: none; padding: ${Math.round(messagePadding / 2)}px ${Math.round(messagePadding * 0.75)}px; display: inline-block; max-width: 100%; overflow: hidden; background-clip: padding-box;`;
 		}
 
 		// Telegram
 		const bubbleColor = isPrimarySpeaker ? '#E1FFC7' : '#ffffff';
-		const radius = isPrimarySpeaker ? '14px 14px 6px 14px' : '14px 14px 14px 6px';
-		return `color: #000000; ${base} background-color: ${bubbleColor}; border-radius: ${radius}; border: 1px solid ${isPrimarySpeaker ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.12)'}; padding: ${Math.round(messagePadding / 2)}px ${Math.round(messagePadding * 0.75)}px; display: inline-block; max-width: 100%;`;
+		const radius = '14px';
+		return `color: #000000; ${base} background-color: ${bubbleColor}; border-radius: ${radius}; border: 1px solid ${isPrimarySpeaker ? 'rgba(0, 0, 0, 0.08)' : 'rgba(0, 0, 0, 0.12)'}; padding: ${Math.round(messagePadding / 2)}px ${Math.round(messagePadding * 0.75)}px; display: inline-block; max-width: 100%; overflow: hidden; background-clip: padding-box;`;
 	}
 
 	function getBubbleTimestampStyle(isPrimarySpeaker: boolean): string {
@@ -714,16 +717,20 @@
 
 <svelte:window onclick={handleGlobalPointerDown} onkeydown={handleGlobalKeyDown} />
 
-<div class="relative">
-	<!-- iPhone Frame -->
-	<div class="w-80 h-[600px] bg-foreground rounded-[2.5rem] p-2 shadow-2xl">
-		<!-- Screen -->
+<div class="relative inline-flex items-center justify-center">
+	<!-- Outer frame: slightly larger than the captured screen -->
+	<div class="relative overflow-hidden rounded-[2.7rem] bg-foreground p-[7px] shadow-2xl" data-export-capture="phone">
+		<!-- Preview mask: aligns visible inner corners with bezel -->
 		<div
-			class="w-full h-full bg-background overflow-hidden relative rounded-[2rem]"
-			data-export-capture="screen"
+			class="relative h-[600px] aspect-[9/16] overflow-hidden rounded-[2.25rem] z-0"
 		>
-			<!-- Content -->
-			<div class="h-full" data-export-capture="app-content">
+			<!-- Captured surface: strict 9:16 inner screen -->
+			<div
+				class="relative h-full w-full bg-background overflow-hidden z-0"
+				data-export-capture="screen"
+			>
+				<!-- Content -->
+				<div class="h-full z-0" data-export-capture="app-content">
 				{#if previewState === 'preview' || previewState === 'video'}
 						<!-- Chat Preview -->
 						<div class="h-full flex flex-col" style="background-color: {backgroundColor}; font-family: {fontFamilyStack};">
@@ -774,12 +781,22 @@
 										<!-- Group avatar circle -->
 										<div
 											class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden"
-											style="background: linear-gradient(135deg, {primaryColor}cc, {primaryColor}88);"
+											style="background: linear-gradient(135deg, {primaryColor}cc, {primaryColor}88); border-radius: 9999px; overflow: hidden;"
 										>
 											{#if channelAvatar}
-												<img src={channelAvatar} alt="Chat Logo" class="w-full h-full object-cover rounded-full" />
+												<img
+													src={channelAvatar}
+													alt="Chat Logo"
+													class="w-full h-full object-cover rounded-full"
+													style="border-radius: 9999px; clip-path: circle(50% at 50% 50%);"
+												/>
 											{:else if characters.length > 0 && characters[0].avatar}
-												<img src={characters[0].avatar} alt="Group" class="w-full h-full object-cover rounded-full" />
+												<img
+													src={characters[0].avatar}
+													alt="Group"
+													class="w-full h-full object-cover rounded-full"
+													style="border-radius: 9999px; clip-path: circle(50% at 50% 50%);"
+												/>
 											{:else}
 												<svg class="w-4 h-4" style="color: #ffffff;" fill="currentColor" viewBox="0 0 24 24">
 													<path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
@@ -1108,7 +1125,7 @@
 									<div class="flex items-center gap-1.5">
 										<div
 											class="flex flex-1 items-center gap-1.5 rounded-full px-2.5 py-1.5"
-											style="background-color: #ffffff; border: 1px solid #d9dfe8;"
+											style="background-color: #ffffff; border: 1px solid #d9dfe8; border-radius: 9999px;"
 										>
 											<svg class="w-[18px] h-[18px] flex-shrink-0" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -1123,11 +1140,14 @@
 											<!-- Camera -->
 											<svg class="w-[18px] h-[18px]" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
-												<circle cx="12" cy="13" r="3"/>
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0a3 3 0 016 0z"/>
 											</svg>
 										</div>
 										<!-- Mic circle -->
-										<div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style="background-color: #00a884;">
+										<div
+											class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
+											style="background-color: #00a884; border-radius: 9999px;"
+										>
 											<svg class="w-[16px] h-[16px]" style="color: #ffffff;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 11a7 7 0 01-14 0m7 7v4m-4 0h8M12 1a3 3 0 00-3 3v7a3 3 0 006 0V4a3 3 0 00-3-3z"/>
 											</svg>
@@ -1142,7 +1162,7 @@
 											</svg>
 											<svg class="w-[18px] h-[18px]" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
-												<circle cx="12" cy="13" r="3"/>
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0a3 3 0 016 0z"/>
 											</svg>
 											<svg class="w-[18px] h-[18px]" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
@@ -1173,7 +1193,7 @@
 									<div class="flex items-center gap-1.5">
 										<div
 											class="flex flex-1 items-center gap-1.5 rounded-full px-2.5 py-1.5"
-											style="background-color: #ffffff; border: 1px solid #d5deea;"
+											style="background-color: #ffffff; border: 1px solid #d5deea; border-radius: 9999px;"
 										>
 											<!-- Attachment/clip -->
 											<svg class="w-[18px] h-[18px] flex-shrink-0" style={getComposerIconStyle()} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1188,7 +1208,10 @@
 											</svg>
 										</div>
 										<!-- Mic circle -->
-										<div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style="background-color: #2aabee;">
+										<div
+											class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
+											style="background-color: #2aabee; border-radius: 9999px;"
+										>
 											<svg class="w-[16px] h-[16px]" style="color: #ffffff;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M19 11a7 7 0 01-14 0m7 7v4m-4 0h8M12 1a3 3 0 00-3 3v7a3 3 0 006 0V4a3 3 0 00-3-3z"/>
 											</svg>
@@ -1214,11 +1237,16 @@
 						</div>
 					</div>
 				{/if}
+				</div>
 			</div>
 		</div>
 
+		<!-- Frame overlay (always above content) -->
+		<div class="pointer-events-none absolute inset-0 z-40 rounded-[2.7rem] border-[7px] border-foreground"></div>
+		<div class="pointer-events-none absolute left-1/2 top-[7px] z-50 h-1 w-20 -translate-x-1/2 rounded-full bg-foreground/80"></div>
+
 		<!-- Home Indicator -->
-		<div class="absolute bottom-2 left-1/2 transform -translate-x-1/2 w-32 h-1 bg-background rounded-full"></div>
+		<div class="pointer-events-none absolute bottom-[7px] left-1/2 z-50 h-1 w-32 -translate-x-1/2 rounded-full bg-background/95"></div>
 	</div>
 
 	{#if canCompose && messageContextMenu && contextMenuMessage}
