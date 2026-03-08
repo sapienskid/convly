@@ -101,6 +101,7 @@
 	let messageDuration = $state(2.5);
 	let transitionDuration = $state(0.3);
 	let animationSpeed = $state(1);
+	let messageAnimationStyle = $state<CustomizationSettings['messageAnimationStyle']>('typing');
 	let enableTransitions = $state(true);
 	let musicEnabled = $state(true);
 	let musicVolume = $state(0.3);
@@ -220,6 +221,10 @@
 		{ value: 'h265', label: 'H.265 (HEVC)' },
 		{ value: 'vp9', label: 'VP9' }
 	];
+	const messageAnimationOptions: SelectOption[] = [
+		{ value: 'typing', label: 'Typing Text' },
+		{ value: 'message-only', label: 'Message Only' }
+	];
 
 	const activeTemplate = $derived(
 		templateOptions.find((template) => template.value === chatPlatform) ?? templateOptions[0]
@@ -233,6 +238,7 @@
 		return buildMessageAnimationTimeline(messages, connections, {
 			messageDuration,
 			transitionDuration,
+			messageAnimationStyle,
 			enableTransitions
 		}).totalDuration;
 	});
@@ -247,6 +253,7 @@
 		messageDuration = customizeSettings.messageDuration;
 		transitionDuration = customizeSettings.transitionDuration;
 		animationSpeed = customizeSettings.animationSpeed;
+		messageAnimationStyle = customizeSettings.messageAnimationStyle ?? 'typing';
 		enableTransitions = customizeSettings.enableTransitions;
 		musicEnabled = customizeSettings.musicEnabled;
 		musicVolume = customizeSettings.musicVolume;
@@ -490,6 +497,39 @@
 					</AccordionTrigger>
 					<AccordionContent>
 						<div class="space-y-4 pt-2">
+							<div>
+								<Label for="message-animation-style" class="text-sm">Message Animation</Label>
+								<Select
+									type="single"
+									bind:value={messageAnimationStyle}
+									items={messageAnimationOptions}
+									onValueChange={(value) => {
+										messageAnimationStyle = value as CustomizationSettings['messageAnimationStyle'];
+										handleApplySettings({
+											messageAnimationStyle: value as CustomizationSettings['messageAnimationStyle']
+										});
+									}}
+								>
+									<SelectTrigger id="message-animation-style" class="mt-1.5">
+										<span data-slot="select-value" class={selectTriggerTextClass(Boolean(messageAnimationStyle))}>
+											{getOptionLabel(
+												messageAnimationOptions,
+												messageAnimationStyle,
+												'Select animation mode'
+											)}
+										</span>
+									</SelectTrigger>
+									<SelectContent>
+										{#each messageAnimationOptions as option}
+											<SelectItem value={option.value} label={option.label}>{option.label}</SelectItem>
+										{/each}
+									</SelectContent>
+								</Select>
+									<p class="mt-1 text-xs text-muted-foreground">
+										Typing Text reveals letters; Message Only posts each message at send time.
+									</p>
+								</div>
+
 							<div>
 								<Label for="message-duration" class="text-sm">Message Duration: {messageDuration.toFixed(1)}s</Label>
 								<Slider

@@ -44,6 +44,7 @@ export type QualitySetting = 'low' | 'medium' | 'high' | 'ultra';
 export type ExportFormatSetting = 'mp4' | 'webm';
 export type CodecSetting = 'h264' | 'h265' | 'vp9';
 export type ChatPlatformSetting = 'discord' | 'whatsapp' | 'messenger' | 'telegram';
+export type MessageAnimationStyleSetting = 'typing' | 'message-only';
 
 export interface CustomizationSettings {
 	channelName: string;
@@ -67,6 +68,7 @@ export interface CustomizationSettings {
 	messageDuration: number;
 	transitionDuration: number;
 	animationSpeed: number;
+	messageAnimationStyle: MessageAnimationStyleSetting;
 	enableTransitions: boolean;
 	musicEnabled: boolean;
 	musicVolume: number;
@@ -98,6 +100,7 @@ export const defaultCustomizationSettings: CustomizationSettings = {
 	messageDuration: 2.5,
 	transitionDuration: 0.3,
 	animationSpeed: 1,
+	messageAnimationStyle: 'typing',
 	enableTransitions: true,
 	musicEnabled: true,
 	musicVolume: 0.3,
