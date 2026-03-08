@@ -18,6 +18,7 @@
 	let isRightPanelCollapsed = $state(true);
 	let isCharacterManagerOpen = $state(false);
 	let isSceneManagerOpen = $state(false);
+	let reopenCharacterManagerAfterEdit = $state(false);
 	let editorView = $state<'conversation' | 'json'>('conversation');
 	let jsonEditorValue = $state('');
 	let jsonEditorError = $state<string | null>(null);
@@ -777,6 +778,10 @@
 
 	function handleCharacterEditorClose() {
 		editingCharacter.set(null);
+		if (reopenCharacterManagerAfterEdit) {
+			isCharacterManagerOpen = true;
+			reopenCharacterManagerAfterEdit = false;
+		}
 	}
 
 	// Get the character being edited
@@ -972,6 +977,7 @@
 	}
 
 	function handleCharacterManagerEdit(characterId: string) {
+		reopenCharacterManagerAfterEdit = true;
 		editingCharacter.set(characterId);
 		isCharacterManagerOpen = false;
 	}
