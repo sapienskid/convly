@@ -25,7 +25,7 @@ export interface ExportOptions {
 }
 
 export interface ExportProgress {
-	phase: 'initializing' | 'rendering' | 'encoding' | 'finalizing' | 'complete' | 'cancelled';
+	phase: 'initializing' | 'rendering' | 'paused' | 'encoding' | 'finalizing' | 'complete' | 'cancelled';
 	percent: number;
 	currentFrame: number;
 	totalFrames: number;
@@ -64,6 +64,13 @@ function waitForDomPaint(preferAnimationFrame = true): Promise<void> {
 		requestAnimationFrame(() => {
 			resolve();
 		});
+	});
+}
+
+/** Pause-loop wait that yields to UI/input; avoids microtask starvation */
+function waitForPauseTick(): Promise<void> {
+	return new Promise((resolve) => {
+		setTimeout(resolve, 16);
 	});
 }
 
@@ -123,6 +130,8 @@ export class VideoExporter {
 	private ctx: CanvasRenderingContext2D | null = null;
 	private isRecording = false;
 	private isCancelled = false;
+	private isPaused = false;
+	private shouldFinalizeAtCurrentFrame = false;
 	private startTime = 0;
 	private options: ExportOptions | null = null;
 	private fatalError: Error | null = null;
@@ -189,7 +198,8 @@ export class VideoExporter {
 		timeline: AnimationTimeline,
 		previewElement: HTMLElement,
 		onProgress: ProgressCallback,
-		onTimeUpdate: (time: number) => Promise<void>
+		onTimeUpdate: (time: number) => Promise<void>,
+		range: { startTimeSeconds?: number; endTimeSeconds?: number } = {}
 	): Promise<Blob | null> {
 		if (!this.canvas || !this.ctx || !this.options) {
 			throw new Error('VideoExporter not initialized');
@@ -197,6 +207,8 @@ export class VideoExporter {
 
 		this.isRecording = true;
 		this.isCancelled = false;
+		this.isPaused = false;
+		this.shouldFinalizeAtCurrentFrame = false;
 		this.fatalError = null;
 		this.isClosingForFailure = false;
 		this.startTime = Date.now();
@@ -208,7 +220,21 @@ export class VideoExporter {
 			const { width, height, fps, format, codec, animationSpeed, quality, backgroundColor } = this.options;
 			const safeFps = Math.min(60, Math.max(24, Math.round(Number(fps) || 30)));
 			const safeAnimationSpeed = Math.min(2, Math.max(0.5, Number(animationSpeed) || 1));
-			const adjustedDuration = timeline.totalDuration / safeAnimationSpeed;
+			const timelineDuration = Math.max(0, timeline.totalDuration);
+			const minSegmentDuration = Math.min(0.1, Math.max(timelineDuration, 0));
+			const boundedSegmentStart = Math.max(
+				0,
+				Math.min(
+					Number(range.startTimeSeconds ?? 0),
+					Math.max(0, timelineDuration - minSegmentDuration)
+				)
+			);
+			const boundedSegmentEnd = Math.max(
+				boundedSegmentStart + minSegmentDuration,
+				Math.min(Number(range.endTimeSeconds ?? timelineDuration), timelineDuration)
+			);
+			const segmentDuration = Math.max(0, boundedSegmentEnd - boundedSegmentStart);
+			const adjustedDuration = segmentDuration / safeAnimationSpeed;
 			totalFrames = Math.max(1, Math.round(adjustedDuration * safeFps));
 			const frameDuration = 1 / safeFps;
 			const frameDurationUs = Math.max(1, Math.round(frameDuration * 1e6));
@@ -454,36 +480,253 @@ export class VideoExporter {
 
 			this.videoEncoder.configure(videoEncoderConfig);
 
-			// Setup audio rendering if audio is needed.
-			// We intentionally avoid full OfflineAudioContext.startRendering() to keep
-			// memory usage bounded for long exports.
 			const audioEvents = extractAudioEventsFromTimeline(timeline);
-			if (audioPlan) {
-					try {
-						const audioSampleRate = audioPlan.encoderConfig.sampleRate;
-						const totalAudioSamples = Math.max(1, Math.ceil(audioSampleRate * adjustedDuration));
-						let musicBuffer: AudioBuffer | null = null;
-						let notifBuffer: AudioBuffer | null = null;
-						const needsDecodeContext =
-							Boolean(this.options.audio.musicEnabled && this.options.audio.musicTrackUrl) ||
-							Boolean(
-								this.options.audio.notificationEnabled && this.options.audio.notificationSoundUrl
-							);
-						const decodeContext = needsDecodeContext
-							? new AudioContext({ sampleRate: audioSampleRate })
-							: null;
 
-						const decodeAudio = async (url: string): Promise<AudioBuffer> => {
-							const res = await fetch(url);
-							if (!res.ok) {
-								throw new Error(`Failed to load audio asset: ${res.status} ${res.statusText}`);
+			onProgress({
+				phase: 'rendering',
+				percent: 0,
+				currentFrame: 0,
+				totalFrames,
+				elapsedMs: Date.now() - this.startTime
+			});
+
+			const progressEvery = Math.max(1, Math.floor(totalFrames / 100));
+			const { domToCanvas, createContext, destroyContext } = await ensureDomToCanvas();
+			// Preload static assets once; re-checking every frame is expensive.
+			await waitForImages(previewElement);
+			await waitForFonts();
+
+			let previewRect = previewElement.getBoundingClientRect();
+			let captureWidth = Math.max(1, Math.round(previewRect.width));
+			let captureHeight = Math.max(1, Math.round(previewRect.height));
+			let attempts = 0;
+			while ((captureWidth <= 1 || captureHeight <= 1) && attempts < 120) {
+				await waitForDomPaint();
+				previewRect = previewElement.getBoundingClientRect();
+				captureWidth = Math.max(1, Math.round(previewRect.width));
+				captureHeight = Math.max(1, Math.round(previewRect.height));
+				attempts += 1;
+			}
+			if (captureWidth <= 1 || captureHeight <= 1) {
+				throw new Error('Preview element has invalid dimensions for export capture');
+			}
+
+			const sourceAspect = captureWidth / captureHeight;
+			const targetAspect = width / height;
+			let drawWidth = width;
+			let drawHeight = height;
+			let drawX = 0;
+			let drawY = 0;
+
+			// Preserve the entire captured preview without cropping so platform
+			// paddings/header/composer framing stay consistent in exported video.
+			if (sourceAspect > targetAspect) {
+				drawWidth = width;
+				drawHeight = Math.max(1, Math.round(width / sourceAspect));
+				drawX = 0;
+				drawY = Math.round((height - drawHeight) / 2);
+			} else {
+				drawHeight = height;
+				drawWidth = Math.max(1, Math.round(height * sourceAspect));
+				drawX = Math.round((width - drawWidth) / 2);
+				drawY = 0;
+			}
+
+			const createCaptureContext = () =>
+				createContext(previewElement, {
+					width: captureWidth,
+					height: captureHeight,
+					scale: 1,
+					backgroundColor,
+					timeout: 15000,
+					drawImageInterval: 0,
+					features: {
+						fixSvgXmlDecode: true,
+						restoreScrollPosition: true
+					},
+					fetch: {
+						bypassingCache: false,
+						requestInit: { cache: 'force-cache' }
+					},
+					autoDestruct: false
+				});
+			const captureContextRefreshEvery = Math.max(safeFps * 3, 72);
+			const maxEncodeQueueSize = Math.max(safeFps, 24);
+			const periodicFlushEvery = Math.max(safeFps, 24);
+			const cooperativeYieldEvery = Math.max(8, Math.floor(safeFps / 2));
+			let captureContext: CaptureContext | null = await createCaptureContext();
+			let renderedFrameCount = 0;
+
+			try {
+				for (let frame = 0; frame < totalFrames; frame++) {
+					currentFrame = frame;
+					this.throwIfFatalError();
+
+					if (this.isPaused) {
+						onProgress({
+							phase: 'paused',
+							percent: Math.min(99, Math.round((frame / Math.max(1, totalFrames)) * 100)),
+							currentFrame: frame,
+							totalFrames,
+							elapsedMs: Date.now() - this.startTime
+						});
+
+						while (this.isPaused && !this.isCancelled) {
+							await waitForPauseTick();
+							this.throwIfFatalError();
+						}
+
+						if (this.isCancelled) {
+							onProgress({
+								phase: 'cancelled',
+								percent: 100,
+								currentFrame: frame,
+								totalFrames,
+								elapsedMs: Date.now() - this.startTime
+							});
+							return null;
+						}
+
+						onProgress({
+							phase: 'rendering',
+							percent: Math.min(99, Math.round((frame / Math.max(1, totalFrames)) * 100)),
+							currentFrame: frame,
+							totalFrames,
+							elapsedMs: Date.now() - this.startTime
+						});
+					}
+
+					if (this.shouldFinalizeAtCurrentFrame && renderedFrameCount > 0) {
+						break;
+					}
+
+					if (this.isCancelled) {
+						onProgress({
+							phase: 'cancelled',
+							percent: 100,
+							currentFrame: frame,
+							totalFrames,
+							elapsedMs: Date.now() - this.startTime
+						});
+						return null;
+					}
+
+					const svelteTime = Math.min(
+						boundedSegmentEnd,
+						boundedSegmentStart + (frame / safeFps) * safeAnimationSpeed
+					);
+					await onTimeUpdate(svelteTime);
+
+					if (frame > 0 && frame % cooperativeYieldEvery === 0) {
+						await waitForDomPaint(false);
+					}
+
+					if (
+						this.videoEncoder.encodeQueueSize > maxEncodeQueueSize ||
+						(frame > 0 && (frame + 1) % periodicFlushEvery === 0)
+					) {
+						await this.videoEncoder.flush();
+					}
+
+					if (frame > 0 && frame % captureContextRefreshEvery === 0) {
+						try {
+							if (captureContext) {
+								destroyContext(captureContext);
 							}
-							const arrayBuffer = await res.arrayBuffer();
-							if (!decodeContext) {
-								throw new Error('Audio decode context unavailable');
-							}
-							return await decodeContext.decodeAudioData(arrayBuffer);
-						};
+						} catch {
+							// Ignore context cleanup errors.
+						}
+						captureContext = await createCaptureContext();
+					}
+
+					const captured = await domToCanvas(captureContext!);
+
+					this.ctx!.fillStyle = backgroundColor;
+					this.ctx!.fillRect(0, 0, width, height);
+					this.ctx!.drawImage(captured, drawX, drawY, drawWidth, drawHeight);
+
+					// Help GC reclaim the transient capture canvas aggressively.
+					captured.width = 0;
+					captured.height = 0;
+
+					const videoFrame = new VideoFrame(this.canvas!, {
+						timestamp: frame * frameDurationUs,
+						duration: frameDurationUs
+					});
+
+					// Keyframe every 2 seconds
+					const keyFrame = frame % (safeFps * 2) === 0;
+					try {
+						this.videoEncoder.encode(videoFrame, { keyFrame });
+					} catch (error) {
+						videoFrame.close();
+						this.setFatalError(error);
+						this.throwIfFatalError();
+					}
+					videoFrame.close();
+					renderedFrameCount = frame + 1;
+
+					if (frame % progressEvery === 0 || frame === totalFrames - 1) {
+						const percent = Math.round(((frame + 1) / totalFrames) * 100);
+						onProgress({
+							phase: 'rendering',
+							percent: Math.min(percent, 99),
+							currentFrame: frame + 1,
+							totalFrames,
+							elapsedMs: Date.now() - this.startTime
+						});
+					}
+				}
+			} finally {
+				try {
+					if (captureContext) {
+						destroyContext(captureContext);
+					}
+				} catch {
+					// Ignore context cleanup errors.
+				}
+			}
+
+			this.throwIfFatalError();
+			const effectiveRenderedFrames = Math.max(1, renderedFrameCount);
+			const effectiveAdjustedDuration = effectiveRenderedFrames / safeFps;
+			const effectiveSegmentEnd = Math.min(
+				boundedSegmentEnd,
+				boundedSegmentStart + effectiveAdjustedDuration * safeAnimationSpeed
+			);
+
+			if (audioPlan && effectiveAdjustedDuration > 0) {
+				onProgress({
+					phase: 'encoding',
+					percent: 93,
+					currentFrame: effectiveRenderedFrames,
+					totalFrames: effectiveRenderedFrames,
+					elapsedMs: Date.now() - this.startTime
+				});
+
+				try {
+					const audioSampleRate = audioPlan.encoderConfig.sampleRate;
+					const totalAudioSamples = Math.max(1, Math.ceil(audioSampleRate * effectiveAdjustedDuration));
+					let musicBuffer: AudioBuffer | null = null;
+					let notifBuffer: AudioBuffer | null = null;
+					const needsDecodeContext =
+						Boolean(this.options.audio.musicEnabled && this.options.audio.musicTrackUrl) ||
+						Boolean(this.options.audio.notificationEnabled && this.options.audio.notificationSoundUrl);
+					const decodeContext = needsDecodeContext
+						? new AudioContext({ sampleRate: audioSampleRate })
+						: null;
+
+					const decodeAudio = async (url: string): Promise<AudioBuffer> => {
+						const res = await fetch(url);
+						if (!res.ok) {
+							throw new Error(`Failed to load audio asset: ${res.status} ${res.statusText}`);
+						}
+						const arrayBuffer = await res.arrayBuffer();
+						if (!decodeContext) {
+							throw new Error('Audio decode context unavailable');
+						}
+						return await decodeContext.decodeAudioData(arrayBuffer);
+					};
 
 					try {
 						if (this.options.audio.musicEnabled && this.options.audio.musicTrackUrl) {
@@ -518,7 +761,16 @@ export class VideoExporter {
 
 					const notificationStarts = audioEvents
 						.filter((event) => event.type === 'notification')
-						.map((event) => Math.max(0, Math.round((event.time / safeAnimationSpeed) * audioSampleRate)))
+						.map((event) => event.time)
+						.filter((eventTime) => eventTime >= boundedSegmentStart && eventTime <= effectiveSegmentEnd)
+						.map((eventTime) =>
+							Math.max(
+								0,
+								Math.round(
+									((eventTime - boundedSegmentStart) / safeAnimationSpeed) * audioSampleRate
+								)
+							)
+						)
 						.filter((startSample) => startSample < totalAudioSamples)
 						.sort((a, b) => a - b);
 
@@ -603,190 +855,25 @@ export class VideoExporter {
 						offset += curSize;
 					}
 
-						await this.audioEncoder.flush();
-						try {
-							this.audioEncoder.close();
-						} catch {
-							// Ignore close errors after audio flush.
-						}
-						this.audioEncoder = null;
-
-						// Drop references to decoded PCM buffers as soon as possible.
-						musicBuffer = null;
-						notifBuffer = null;
-					} catch (err) {
+					await this.audioEncoder.flush();
+					try {
+						this.audioEncoder.close();
+					} catch {
+						// Ignore close errors after audio flush.
+					}
+					this.audioEncoder = null;
+					musicBuffer = null;
+					notifBuffer = null;
+				} catch (err) {
 					console.warn('Failed to generate offline audio track:', err);
 				}
 			}
 
 			onProgress({
-				phase: 'rendering',
-				percent: 0,
-				currentFrame: 0,
-				totalFrames,
-				elapsedMs: Date.now() - this.startTime
-			});
-
-			const progressEvery = Math.max(1, Math.floor(totalFrames / 100));
-			const { domToCanvas, createContext, destroyContext } = await ensureDomToCanvas();
-			// Preload static assets once; re-checking every frame is expensive.
-			await waitForImages(previewElement);
-			await waitForFonts();
-
-			let previewRect = previewElement.getBoundingClientRect();
-			let captureWidth = Math.max(1, Math.round(previewRect.width));
-			let captureHeight = Math.max(1, Math.round(previewRect.height));
-			let attempts = 0;
-			while ((captureWidth <= 1 || captureHeight <= 1) && attempts < 120) {
-				await waitForDomPaint();
-				previewRect = previewElement.getBoundingClientRect();
-				captureWidth = Math.max(1, Math.round(previewRect.width));
-				captureHeight = Math.max(1, Math.round(previewRect.height));
-				attempts += 1;
-			}
-			if (captureWidth <= 1 || captureHeight <= 1) {
-				throw new Error('Preview element has invalid dimensions for export capture');
-			}
-
-			const sourceAspect = captureWidth / captureHeight;
-			const targetAspect = width / height;
-			let drawWidth = width;
-			let drawHeight = height;
-			let drawX = 0;
-			let drawY = 0;
-
-			// Preserve the entire captured preview without cropping so platform
-			// paddings/header/composer framing stay consistent in exported video.
-			if (sourceAspect > targetAspect) {
-				drawWidth = width;
-				drawHeight = Math.max(1, Math.round(width / sourceAspect));
-				drawX = 0;
-				drawY = Math.round((height - drawHeight) / 2);
-			} else {
-				drawHeight = height;
-				drawWidth = Math.max(1, Math.round(height * sourceAspect));
-				drawX = Math.round((width - drawWidth) / 2);
-				drawY = 0;
-			}
-
-			const createCaptureContext = () =>
-				createContext(previewElement, {
-					width: captureWidth,
-					height: captureHeight,
-					scale: 1,
-					backgroundColor,
-					timeout: 15000,
-					drawImageInterval: 0,
-					features: {
-						fixSvgXmlDecode: true,
-						restoreScrollPosition: true
-					},
-					fetch: {
-						bypassingCache: false,
-						requestInit: { cache: 'force-cache' }
-					},
-					autoDestruct: false
-				});
-			const captureContextRefreshEvery = Math.max(safeFps * 3, 72);
-			const maxEncodeQueueSize = Math.max(safeFps, 24);
-			const periodicFlushEvery = Math.max(safeFps, 24);
-			const cooperativeYieldEvery = Math.max(8, Math.floor(safeFps / 2));
-			let captureContext: CaptureContext | null = await createCaptureContext();
-
-			try {
-				for (let frame = 0; frame < totalFrames; frame++) {
-					currentFrame = frame;
-					this.throwIfFatalError();
-
-					if (this.isCancelled) {
-						onProgress({
-							phase: 'cancelled',
-							percent: 100,
-							currentFrame: frame,
-							totalFrames,
-							elapsedMs: Date.now() - this.startTime
-						});
-						return null;
-					}
-
-					const svelteTime = (frame / safeFps) * safeAnimationSpeed;
-					await onTimeUpdate(svelteTime);
-
-					if (frame > 0 && frame % cooperativeYieldEvery === 0) {
-						await waitForDomPaint(false);
-					}
-
-					if (
-						this.videoEncoder.encodeQueueSize > maxEncodeQueueSize ||
-						(frame > 0 && (frame + 1) % periodicFlushEvery === 0)
-					) {
-						await this.videoEncoder.flush();
-					}
-
-					if (frame > 0 && frame % captureContextRefreshEvery === 0) {
-						try {
-							if (captureContext) {
-								destroyContext(captureContext);
-							}
-						} catch {
-							// Ignore context cleanup errors.
-						}
-						captureContext = await createCaptureContext();
-					}
-
-					const captured = await domToCanvas(captureContext!);
-
-					this.ctx!.fillStyle = backgroundColor;
-					this.ctx!.fillRect(0, 0, width, height);
-					this.ctx!.drawImage(captured, drawX, drawY, drawWidth, drawHeight);
-
-					// Help GC reclaim the transient capture canvas aggressively.
-					captured.width = 0;
-					captured.height = 0;
-
-					const videoFrame = new VideoFrame(this.canvas!, {
-						timestamp: frame * frameDurationUs,
-						duration: frameDurationUs
-					});
-
-					// Keyframe every 2 seconds
-					const keyFrame = frame % (safeFps * 2) === 0;
-					try {
-						this.videoEncoder.encode(videoFrame, { keyFrame });
-					} catch (error) {
-						videoFrame.close();
-						this.setFatalError(error);
-						this.throwIfFatalError();
-					}
-					videoFrame.close();
-
-					if (frame % progressEvery === 0 || frame === totalFrames - 1) {
-						const percent = Math.round(((frame + 1) / totalFrames) * 100);
-						onProgress({
-							phase: 'rendering',
-							percent: Math.min(percent, 99),
-							currentFrame: frame + 1,
-							totalFrames,
-							elapsedMs: Date.now() - this.startTime
-						});
-					}
-				}
-			} finally {
-				try {
-					if (captureContext) {
-						destroyContext(captureContext);
-					}
-				} catch {
-					// Ignore context cleanup errors.
-				}
-			}
-
-			this.throwIfFatalError();
-			onProgress({
 				phase: 'finalizing',
 				percent: 95,
-				currentFrame: totalFrames,
-				totalFrames,
+				currentFrame: effectiveRenderedFrames,
+				totalFrames: effectiveRenderedFrames,
 				elapsedMs: Date.now() - this.startTime
 			});
 
@@ -869,12 +956,16 @@ export class VideoExporter {
 			throw this.fatalError ?? (error instanceof Error ? error : new Error(String(error)));
 		} finally {
 			this.isRecording = false;
+			this.isPaused = false;
+			this.shouldFinalizeAtCurrentFrame = false;
 			this.muxer = null;
 		}
 	}
 
 	cancel(): void {
 		this.isCancelled = true;
+		this.isPaused = false;
+		this.shouldFinalizeAtCurrentFrame = false;
 		this.isRecording = false;
 		if (this.options?.outputFileStream) {
 			this.options.outputFileStream.abort().catch(() => {
@@ -912,10 +1003,31 @@ export class VideoExporter {
 		this.options = null;
 		this.fatalError = null;
 		this.startTime = 0;
+		this.shouldFinalizeAtCurrentFrame = false;
 	}
 
 	getIsRecording(): boolean {
 		return this.isRecording;
+	}
+
+	pause(): void {
+		if (!this.isRecording) return;
+		this.isPaused = true;
+	}
+
+	resume(): void {
+		if (!this.isRecording) return;
+		this.isPaused = false;
+	}
+
+	finishAtCurrentFrame(): void {
+		if (!this.isRecording) return;
+		this.shouldFinalizeAtCurrentFrame = true;
+		this.isPaused = false;
+	}
+
+	getIsPaused(): boolean {
+		return this.isPaused;
 	}
 }
 

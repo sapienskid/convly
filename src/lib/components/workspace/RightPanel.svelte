@@ -53,11 +53,15 @@
 		hasMusicTrack: boolean;
 		isMusicPlaying: boolean;
 		isExporting?: boolean;
+		isExportPaused?: boolean;
 		exportProgress?: ExportProgress | null;
 		onPreviewAnimation: () => void;
 		onMusicUpload: (file: File) => void;
 		onMusicToggle: () => void;
 		onExportVideo: () => void;
+		onPauseExport?: () => void;
+		onResumeExport?: () => void;
+		onFinishExportAtPause?: () => void;
 		onCancelExport?: () => void;
 		onCustomizationApply: (settings: Partial<CustomizationSettings>) => void;
 		onConversationFix: (action: ConversationFixAction) => number;
@@ -74,32 +78,36 @@
 		hasMusicTrack,
 		isMusicPlaying,
 		isExporting = false,
+		isExportPaused = false,
 		exportProgress = null,
 		onPreviewAnimation,
 		onMusicUpload,
 		onMusicToggle,
 		onExportVideo,
+		onPauseExport,
+		onResumeExport,
+		onFinishExportAtPause,
 		onCancelExport,
 		onCustomizationApply,
 		onConversationFix
 	}: Props = $props();
 
-	let channelName = $state(customizeSettings.channelName);
-	let channelAvatar = $state(customizeSettings.channelAvatar ?? '');
-	let chatPlatform = $state<ChatPlatformSetting>(customizeSettings.chatPlatform ?? 'discord');
-	let resolution = $state(customizeSettings.resolution);
-	let fps = $state(customizeSettings.fps);
-	let quality = $state(customizeSettings.quality);
-	let messageDuration = $state(customizeSettings.messageDuration);
-	let transitionDuration = $state(customizeSettings.transitionDuration);
-	let animationSpeed = $state(customizeSettings.animationSpeed);
-	let enableTransitions = $state(customizeSettings.enableTransitions);
-	let musicEnabled = $state(customizeSettings.musicEnabled);
-	let musicVolume = $state(customizeSettings.musicVolume);
-	let notificationSoundEnabled = $state(customizeSettings.notificationSoundEnabled);
-	let exportFormat = $state(customizeSettings.exportFormat);
-	let codec = $state(customizeSettings.codec);
-	let enableCompression = $state(customizeSettings.enableCompression);
+	let channelName = $state('');
+	let channelAvatar = $state('');
+	let chatPlatform = $state<ChatPlatformSetting>('discord');
+	let resolution = $state<CustomizationSettings['resolution']>('vertical-1080x1920');
+	let fps = $state(30);
+	let quality = $state<CustomizationSettings['quality']>('high');
+	let messageDuration = $state(2.5);
+	let transitionDuration = $state(0.3);
+	let animationSpeed = $state(1);
+	let enableTransitions = $state(true);
+	let musicEnabled = $state(true);
+	let musicVolume = $state(0.3);
+	let notificationSoundEnabled = $state(true);
+	let exportFormat = $state<CustomizationSettings['exportFormat']>('mp4');
+	let codec = $state<CustomizationSettings['codec']>('h264');
+	let enableCompression = $state(true);
 	let qaStatusMessage = $state<string | null>(null);
 
 	const templateOptions: Array<{
@@ -197,7 +205,6 @@
 	];
 
 	const qualityOptions: SelectOption[] = [
-		{ value: 'low', label: 'Low (Faster)' },
 		{ value: 'medium', label: 'Medium' },
 		{ value: 'high', label: 'High' },
 		{ value: 'ultra', label: 'Ultra (Slower)' }
@@ -218,6 +225,9 @@
 		templateOptions.find((template) => template.value === chatPlatform) ?? templateOptions[0]
 	);
 	const qaReport = $derived(analyzeConversationQA(characters, messages, connections));
+	const exportUiPaused = $derived.by(
+		() => isExportPaused || exportProgress?.phase === 'paused'
+	);
 
 	const estimatedVideoLength = $derived.by(() => {
 		return buildMessageAnimationTimeline(messages, connections, {
@@ -233,7 +243,7 @@
 		chatPlatform = customizeSettings.chatPlatform ?? 'discord';
 		resolution = customizeSettings.resolution;
 		fps = customizeSettings.fps;
-		quality = customizeSettings.quality;
+		quality = customizeSettings.quality === 'low' ? 'medium' : customizeSettings.quality;
 		messageDuration = customizeSettings.messageDuration;
 		transitionDuration = customizeSettings.transitionDuration;
 		animationSpeed = customizeSettings.animationSpeed;
@@ -783,7 +793,7 @@
 	</div>
 
 	<div class="flex-shrink-0 border-t border-border bg-card/95 p-4 backdrop-blur-sm">
-		<div class="grid grid-cols-2 gap-2">
+		<div class="space-y-2">
 			<Button
 				variant="outline"
 				class="w-full"
@@ -796,11 +806,13 @@
 			</Button>
 
 			{#if isExporting && exportProgress}
-				<div class="w-full space-y-3">
+				<div class="w-full space-y-3 rounded-lg border border-border bg-muted/20 p-3">
 					<div class="flex items-center justify-between text-sm">
 						<span class="font-medium text-muted-foreground">
 							{#if exportProgress.phase === 'initializing'}
 								Initializing...
+							{:else if exportUiPaused}
+								Paused
 							{:else if exportProgress.phase === 'rendering'}
 								Rendering frames...
 							{:else if exportProgress.phase === 'finalizing'}
@@ -821,11 +833,35 @@
 						></div>
 					</div>
 
-					{#if exportProgress.phase !== 'complete'}
-						<Button variant="outline" class="w-full" onclick={() => onCancelExport?.()} size="sm">
-							<X class="mr-2 size-4" />
-							Cancel Export
-						</Button>
+						{#if exportProgress.phase !== 'complete' && exportProgress.phase !== 'cancelled'}
+							{#if exportProgress.phase === 'rendering' || exportProgress.phase === 'paused'}
+								<div class="space-y-2">
+									{#if exportUiPaused}
+										<Button variant="outline" class="w-full" onclick={() => onResumeExport?.()} size="sm">
+											<Play class="mr-2 size-4" />
+											Resume Export
+									</Button>
+									<Button variant="outline" class="w-full" onclick={() => onFinishExportAtPause?.()} size="sm">
+										<Download class="mr-2 size-4" />
+										Export Up To Pause Point
+									</Button>
+								{:else}
+									<Button variant="outline" class="w-full" onclick={() => onPauseExport?.()} size="sm">
+										<Pause class="mr-2 size-4" />
+										Pause Export
+									</Button>
+								{/if}
+								<Button variant="outline" class="w-full" onclick={() => onCancelExport?.()} size="sm">
+									<X class="mr-2 size-4" />
+									Cancel Export
+								</Button>
+							</div>
+						{:else}
+							<Button variant="outline" class="w-full" onclick={() => onCancelExport?.()} size="sm">
+								<X class="mr-2 size-4" />
+								Cancel Export
+							</Button>
+						{/if}
 					{/if}
 				</div>
 			{:else}

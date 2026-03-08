@@ -58,6 +58,7 @@
 	// Video Export State
 	let videoExporter = $state<VideoExporter | null>(null);
 	let isExporting = $state(false);
+	let isExportPaused = $state(false);
 	let exportProgress = $state<ExportProgress | null>(null);
 	let livePreviewCaptureElement = $state<HTMLDivElement | null>(null);
 
@@ -400,6 +401,7 @@
 		const previousIsMusicPlaying = isMusicPlaying;
 
 		isExporting = true;
+		isExportPaused = false;
 		exportProgress = {
 			phase: 'initializing',
 			percent: 0,
@@ -411,6 +413,7 @@
 		const resolution = getResolutionPreset($customizeSettings.resolution);
 		const exportFormat = $customizeSettings.exportFormat;
 		const exportChannelName = $customizeSettings.channelName || 'general';
+		const exportQuality = $customizeSettings.quality === 'low' ? 'medium' : $customizeSettings.quality;
 		const outputTarget = await prepareOutputFileTarget(exportFormat, exportChannelName);
 		let outputTargetCleanup = outputTarget.cleanup;
 		let deferredOutputCleanup: Promise<void> | null = null;
@@ -430,8 +433,8 @@
 
 			const previewContainer = await waitForLivePreviewElement();
 			const screenCaptureElement =
-				previewContainer.querySelector<HTMLElement>('[data-export-capture="screen"]') ??
 				previewContainer.querySelector<HTMLElement>('[data-export-capture="app-content"]') ??
+				previewContainer.querySelector<HTMLElement>('[data-export-capture="screen"]') ??
 				previewContainer;
 			const captureBackground =
 				getComputedStyle(screenCaptureElement).backgroundColor ||
@@ -445,7 +448,7 @@
 				format: exportFormat,
 				codec: $customizeSettings.codec,
 				animationSpeed: normalizedAnimationSpeed,
-				quality: $customizeSettings.quality,
+				quality: exportQuality,
 				channelName: exportChannelName,
 				backgroundColor: captureBackground,
 				outputFileStream: outputTarget.stream,
@@ -465,6 +468,7 @@
 				screenCaptureElement,
 				(progress) => {
 					exportProgress = progress;
+					isExportPaused = progress.phase === 'paused';
 				},
 				async (time: number) => {
 					videoCurrentTime = time;
@@ -509,6 +513,7 @@
 			}
 		} catch (error) {
 			console.error('Export failed:', error);
+			isExportPaused = false;
 			exportProgress = {
 				phase: 'cancelled',
 				percent: 0,
@@ -549,8 +554,45 @@
 
 			setTimeout(() => {
 				isExporting = false;
+				isExportPaused = false;
 				exportProgress = null;
 			}, 1500);
+		}
+	}
+
+	function handlePauseExport() {
+		if (!isExporting || !videoExporter) return;
+		videoExporter.pause();
+		isExportPaused = true;
+		if (exportProgress && exportProgress.phase === 'rendering') {
+			exportProgress = {
+				...exportProgress,
+				phase: 'paused'
+			};
+		}
+	}
+
+	function handleResumeExport() {
+		if (!isExporting || !videoExporter) return;
+		videoExporter.resume();
+		isExportPaused = false;
+		if (exportProgress && exportProgress.phase === 'paused') {
+			exportProgress = {
+				...exportProgress,
+				phase: 'rendering'
+			};
+		}
+	}
+
+	function handleFinishExportAtPause() {
+		if (!isExporting || !videoExporter) return;
+		videoExporter.finishAtCurrentFrame();
+		isExportPaused = false;
+		if (exportProgress) {
+			exportProgress = {
+				...exportProgress,
+				phase: 'finalizing'
+			};
 		}
 	}
 
@@ -559,11 +601,13 @@
 			videoExporter.cancel();
 		}
 		isExporting = false;
+		isExportPaused = false;
 		exportProgress = null;
 	}
 
 	function handleVideoDownload() {
 		const resolutionPreset = getResolutionPreset($customizeSettings.resolution);
+		const exportQuality = $customizeSettings.quality === 'low' ? 'medium' : $customizeSettings.quality;
 		const timeline = animationTimeline.entries.map((entry, index) => ({
 			index: index + 1,
 			messageId: entry.message.id,
@@ -600,7 +644,7 @@
 				aspectRatio: resolutionPreset.aspectRatio,
 				platformPreset: resolutionPreset.platform,
 				fps: $customizeSettings.fps,
-				quality: $customizeSettings.quality,
+				quality: exportQuality,
 				durationSeconds: videoDuration
 			},
 				audio: {
@@ -1315,11 +1359,15 @@
 				hasMusicTrack={Boolean(musicTrackUrl)}
 				isMusicPlaying={isMusicPlaying}
 				isExporting={isExporting}
+				isExportPaused={isExportPaused}
 				exportProgress={exportProgress}
 				onPreviewAnimation={handlePreviewAnimation}
 				onMusicUpload={handleMusicUpload}
 				onMusicToggle={handleMusicToggle}
 				onExportVideo={handleExportVideo}
+				onPauseExport={handlePauseExport}
+				onResumeExport={handleResumeExport}
+				onFinishExportAtPause={handleFinishExportAtPause}
 				onCancelExport={handleCancelExport}
 				onCustomizationApply={handleApplyCustomization}
 				onConversationFix={handleConversationFix}

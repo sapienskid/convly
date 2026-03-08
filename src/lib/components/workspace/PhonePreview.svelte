@@ -719,7 +719,7 @@
 	<div class="w-80 h-[600px] bg-foreground rounded-[2.5rem] p-2 shadow-2xl">
 		<!-- Screen -->
 		<div
-			class="w-full h-full bg-background overflow-hidden relative {isExporting ? '' : 'rounded-[2rem]'}"
+			class="w-full h-full bg-background overflow-hidden relative rounded-[2rem]"
 			data-export-capture="screen"
 		>
 			<!-- Content -->

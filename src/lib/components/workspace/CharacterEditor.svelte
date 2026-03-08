@@ -19,19 +19,19 @@
 	let { character, open, onClose }: Props = $props();
 
 	// Avatar generation state
-	let avatarSeed = $state(character?.username || 'default');
+	let avatarSeed = $state('default');
 	let avatarStyle = $state<'pixel-art' | 'bottts' | 'avataaars' | 'lorelei' | 'notionists'>('bottts');
-	let username = $state(character?.username || '');
-	let roleColor = $state(character?.roleColor || '#ff6f3b');
+	let username = $state('');
+	let roleColor = $state('#ff6f3b');
 	let roleTitle = $state<string>('Member');
 	let customAvatarUrl = $state<string | null>(null);
 	let avatarMode = $state<'generated' | 'upload'>('generated');
 	
 	// Aura state
-	let auraDescription = $state(character?.aura?.description || '');
-	let auraTone = $state(character?.aura?.tone || 'neutral');
-	let auraSpeakingStyle = $state(character?.aura?.speakingStyle || 'natural');
-	let auraKeywords = $state(character?.aura?.keywords?.join(', ') || '');
+	let auraDescription = $state('');
+	let auraTone = $state('neutral');
+	let auraSpeakingStyle = $state('natural');
+	let auraKeywords = $state('');
 
 	// Predefined role colors and titles
 	const roles = [
