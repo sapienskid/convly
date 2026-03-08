@@ -43,6 +43,9 @@ export async function captureElement(
 		height: options.height,
 		scale: options.scale,
 		backgroundColor: options.backgroundColor,
+		font: {
+			preferredFormat: 'woff2'
+		},
 		style: {
 			transformOrigin: 'top left'
 		},

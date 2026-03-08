@@ -6,6 +6,25 @@ const MIN_TYPING_SECONDS = 0.2;
 const MAX_TYPING_SECONDS = 12;
 const EPSILON = 0.0001;
 
+function splitTextToGraphemes(text: string): string[] {
+	const intlWithSegmenter = Intl as unknown as {
+		Segmenter?: new (
+			locales?: string | string[],
+			options?: { granularity?: 'grapheme' | 'word' | 'sentence' }
+		) => { segment: (input: string) => Iterable<{ segment: string }> };
+	};
+	const Segmenter = intlWithSegmenter.Segmenter;
+	if (Segmenter) {
+		try {
+			const segmenter = new Segmenter(undefined, { granularity: 'grapheme' });
+			return Array.from(segmenter.segment(text), ({ segment }) => segment);
+		} catch {
+			// Fallback for browsers with partial Segmenter support.
+		}
+	}
+	return Array.from(text);
+}
+
 export interface TimelineEntry {
 	message: Message;
 	start: number;
@@ -55,7 +74,7 @@ function getOrderedMessages(messages: Message[], connections: Connection[]): Mes
 }
 
 function getTypingDuration(message: Message): number {
-	const textLength = message.text?.length ?? 0;
+	const textLength = splitTextToGraphemes(message.text ?? '').length;
 	const rawSeconds = (textLength * DEFAULT_TYPING_MS_PER_CHAR) / 1000;
 	return Math.min(MAX_TYPING_SECONDS, Math.max(MIN_TYPING_SECONDS, rawSeconds));
 }
@@ -76,7 +95,8 @@ export function buildMessageAnimationTimeline(
 
 	for (let i = 0; i < orderedMessages.length; i += 1) {
 		const message = orderedMessages[i];
-		const typingDuration = getTypingDuration(message);
+		const typingDuration =
+			messageAnimationStyle === 'message-only' && i === 0 ? 0 : getTypingDuration(message);
 		const transitionDuration = i < orderedMessages.length - 1 ? baseTransitionDuration : 0;
 		const start = cursor;
 		const typingEnd = start + typingDuration;
@@ -122,6 +142,7 @@ export function resolvePlaybackState(
 	for (let i = 0; i < timeline.entries.length; i += 1) {
 		const entry = timeline.entries[i];
 		const fullText = entry.message.text ?? '';
+		const fullTextGraphemes = splitTextToGraphemes(fullText);
 		const currentCharacterId = entry.message.characterId ?? null;
 		const nextCharacterId = timeline.entries[i + 1]?.message.characterId ?? null;
 
@@ -159,11 +180,14 @@ export function resolvePlaybackState(
 
 			const charCount = Math.max(
 				0,
-				Math.min(fullText.length, Math.floor(typingProgress * fullText.length))
+				Math.min(
+					fullTextGraphemes.length,
+					Math.floor(typingProgress * fullTextGraphemes.length)
+				)
 			);
 			visibleMessages.push({
 				message: entry.message,
-				text: fullText.slice(0, charCount),
+				text: fullTextGraphemes.slice(0, charCount).join(''),
 				isTyping: true,
 				isComplete: false
 			});

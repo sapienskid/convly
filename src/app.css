@@ -4,9 +4,9 @@
 
 :root {
   --radius: 0.75rem;
-  --font-display: "Bricolage Grotesque", "Archivo", sans-serif;
-  --font-sans: "Instrument Sans", "Manrope", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --font-display: "Bricolage Grotesque", "Archivo", "Noto Color Emoji", sans-serif;
+  --font-sans: "Instrument Sans", "Manrope", "Noto Color Emoji", sans-serif;
+  --font-mono: "JetBrains Mono", "Noto Color Emoji", monospace;
   --background: oklch(0.97 0.02 84);
   --foreground: oklch(0.25 0.03 252);
   --card: oklch(0.995 0.008 84);

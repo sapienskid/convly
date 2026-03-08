@@ -555,6 +555,9 @@ export class VideoExporter {
 						bypassingCache: false,
 						requestInit: { cache: 'force-cache' }
 					},
+					font: {
+						preferredFormat: 'woff2'
+					},
 					autoDestruct: false
 				});
 			const captureContextRefreshEvery = Math.max(safeFps * 3, 72);

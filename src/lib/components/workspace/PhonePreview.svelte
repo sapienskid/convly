@@ -222,7 +222,7 @@
 	const fontFamily = $derived(customizeSettings.fontFamily || platformTheme.fontFamily);
 	const fontFamilyStack = $derived.by(() => {
 		const emojiFallback =
-			"'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', 'Noto Emoji', sans-serif";
+			"'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Emoji', sans-serif";
 		const stacks: Record<string, string> = {
 			'Instrument Sans': `'Instrument Sans', ${emojiFallback}`,
 			'Bricolage Grotesque': `'Bricolage Grotesque', ${emojiFallback}`,
@@ -933,10 +933,11 @@
 												</svg>
 											</div>
 										{/if}
-										<div class="text-base font-semibold mb-1" style={getHeaderTextStyle()}>
-											Welcome to {channelName}
+										<div class="text-base font-semibold leading-tight" style={getHeaderTextStyle()}>
+											<span class="block">Welcome to</span>
+											<span class="mt-1 block max-w-[14rem] break-words text-center">{channelName}</span>
 										</div>
-										<div class="text-xs px-6" style={getHeaderSubtitleStyle()}>
+										<div class="mt-2 text-xs leading-5 px-6" style={getHeaderSubtitleStyle()}>
 											Send your first message from the composer below.
 										</div>
 									</div>
