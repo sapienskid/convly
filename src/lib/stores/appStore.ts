@@ -918,6 +918,16 @@ export function importConversationFromJSON(payload: unknown) {
 	const existingCharacterBySpeaker = new Map(
 		existingCharacters.map((character) => [speakerKey(character.username), character])
 	);
+	const cloneCharacter = (character: Character): Character => ({
+		...character,
+		position: { ...character.position },
+		aura: character.aura
+			? {
+					...character.aura,
+					keywords: [...character.aura.keywords]
+				}
+			: undefined
+	});
 
 	const normalizedEntries = entries
 		.map((entry, index) => {
@@ -938,10 +948,11 @@ export function importConversationFromJSON(payload: unknown) {
 				sourceCharacterId && existingCharacterById.has(sourceCharacterId)
 					? existingCharacterById.get(sourceCharacterId)!.username
 					: null;
-			const speaker =
+			const speaker = (
 				namedSpeaker ??
 				speakerFromCharacterId ??
-				(sourceCharacterId ? `Speaker ${sourceCharacterId}` : `Speaker ${index + 1}`);
+				(sourceCharacterId ? `Speaker ${sourceCharacterId}` : `Speaker ${index + 1}`)
+			).trim();
 			const text = readMessageText(entry);
 			const timestamp =
 				readFirstString(entry, ['timestamp', 'createdAt', 'time']) || new Date().toISOString();
@@ -956,6 +967,10 @@ export function importConversationFromJSON(payload: unknown) {
 			if (!text) return null;
 			return {
 				speaker,
+				sourceCharacterId,
+				characterIdentity: sourceCharacterId
+					? `character:${sourceCharacterId}`
+					: `speaker:${speakerKey(speaker)}`,
 				text,
 				timestamp,
 				replyRef,
@@ -969,43 +984,57 @@ export function importConversationFromJSON(payload: unknown) {
 		throw new Error('Messages were found but none contained text content.');
 	}
 
-	const uniqueSpeakers: string[] = [];
-	const seenSpeakers = new Set<string>();
-	for (const entry of normalizedEntries) {
-		const key = speakerKey(entry.speaker);
-		if (!seenSpeakers.has(key)) {
-			seenSpeakers.add(key);
-			uniqueSpeakers.push(entry.speaker);
-		}
-	}
-
 	const colorPalette = ['#ff6f3b', '#0ea5a4', '#2563eb', '#f59e0b', '#ef4444', '#14b8a6', '#0f766e', '#64748b'];
-	const speakerMap = new Map<string, Character>();
-	const importedCharacters: Character[] = uniqueSpeakers.map((speaker, index) => {
-		const existingCharacter = existingCharacterBySpeaker.get(speakerKey(speaker));
-		const id = existingCharacter?.id ?? `char-import-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`;
-		const character: Character = {
-			id,
-			username: speaker,
-			avatar:
-				existingCharacter?.avatar ??
-				`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(
-					speaker
-				)}&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90`,
-			roleColor: existingCharacter?.roleColor ?? colorPalette[index % colorPalette.length],
-			position: existingCharacter
-				? { ...existingCharacter.position }
-				: { x: 100, y: 80 + index * 180 }
-		};
-		if (existingCharacter?.aura) {
-			character.aura = {
-				...existingCharacter.aura,
-				keywords: [...existingCharacter.aura.keywords]
-			};
+	const importedCharacters: Character[] = [];
+	const identityToCharacter = new Map<string, Character>();
+	const importedCharacterById = new Map<string, Character>();
+	const usedCharacterIds = new Set<string>();
+
+	for (const entry of normalizedEntries) {
+		if (identityToCharacter.has(entry.characterIdentity)) {
+			continue;
 		}
-		speakerMap.set(speakerKey(speaker), character);
-		return character;
-	});
+
+		const matchedExistingCharacter =
+			(entry.sourceCharacterId ? existingCharacterById.get(entry.sourceCharacterId) : undefined) ??
+			existingCharacterBySpeaker.get(speakerKey(entry.speaker));
+
+		if (matchedExistingCharacter) {
+			const reused =
+				importedCharacterById.get(matchedExistingCharacter.id) ??
+				(() => {
+					const cloned = cloneCharacter(matchedExistingCharacter);
+					importedCharacterById.set(cloned.id, cloned);
+					importedCharacters.push(cloned);
+					usedCharacterIds.add(cloned.id);
+					return cloned;
+				})();
+			identityToCharacter.set(entry.characterIdentity, reused);
+			continue;
+		}
+
+		const desiredId =
+			entry.sourceCharacterId && !usedCharacterIds.has(entry.sourceCharacterId)
+				? entry.sourceCharacterId
+				: null;
+		const generatedId =
+			desiredId ??
+			`char-import-${Date.now()}-${importedCharacters.length}-${Math.random().toString(36).slice(2, 6)}`;
+		usedCharacterIds.add(generatedId);
+
+		const created: Character = {
+			id: generatedId,
+			username: entry.speaker,
+			avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(
+				entry.speaker
+			)}&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90`,
+			roleColor: colorPalette[importedCharacters.length % colorPalette.length],
+			position: { x: 100, y: 80 + importedCharacters.length * 180 }
+		};
+		identityToCharacter.set(entry.characterIdentity, created);
+		importedCharacterById.set(created.id, created);
+		importedCharacters.push(created);
+	}
 
 	const importedMessages: Message[] = [];
 	const rawIdToMessageId = new Map<string, string>();
@@ -1014,7 +1043,7 @@ export function importConversationFromJSON(payload: unknown) {
 
 	for (const [index, entry] of normalizedEntries.entries()) {
 		const id = `msg-import-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`;
-		const speakerCharacter = speakerMap.get(speakerKey(entry.speaker));
+		const speakerCharacter = identityToCharacter.get(entry.characterIdentity);
 		if (!speakerCharacter) continue;
 		const parsedTime = Date.parse(entry.timestamp);
 		const timestamp = Number.isFinite(parsedTime)

@@ -797,23 +797,28 @@
 		const orderedMessages =
 			animationTimeline.orderedMessages.length > 0 ? animationTimeline.orderedMessages : $messages;
 
-		const conversation = orderedMessages.map((message) => {
-			const payload: {
-				id: string;
-				speaker: string;
-				text: string;
-				timestamp: string;
-				replyTo?: string;
-			} = {
-				id: message.id,
-				speaker: characterById.get(message.characterId ?? '') ?? 'Speaker',
-				text: message.text,
-				timestamp: message.timestamp
-			};
+			const conversation = orderedMessages.map((message) => {
+				const payload: {
+					id: string;
+					speaker: string;
+					characterId?: string;
+					text: string;
+					timestamp: string;
+					replyTo?: string;
+				} = {
+					id: message.id,
+					speaker: characterById.get(message.characterId ?? '') ?? 'Speaker',
+					text: message.text,
+					timestamp: message.timestamp
+				};
 
-			if (message.replyTo) {
-				payload.replyTo = message.replyTo;
-			}
+				if (message.characterId) {
+					payload.characterId = message.characterId;
+				}
+
+				if (message.replyTo) {
+					payload.replyTo = message.replyTo;
+				}
 
 			return payload;
 		});
