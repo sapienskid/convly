@@ -114,31 +114,31 @@
 		value: ChatPlatformSetting;
 		label: string;
 		description: string;
-		gradient: string;
+		accentColor: string;
 	}> = [
 		{
 			value: 'discord',
 			label: 'Discord',
 			description: 'Compact gamer-style channel feed',
-			gradient: 'linear-gradient(135deg, #5865f2, #4f46e5)'
+			accentColor: '#5865f2'
 		},
 		{
 			value: 'whatsapp',
 			label: 'WhatsApp',
 			description: 'Conversational mobile chat style',
-			gradient: 'linear-gradient(135deg, #25d366, #128c7e)'
+			accentColor: '#25d366'
 		},
 		{
 			value: 'messenger',
 			label: 'Messenger',
 			description: 'Rounded social chat bubbles',
-			gradient: 'linear-gradient(135deg, #00b2ff, #006aff)'
+			accentColor: '#00b2ff'
 		},
 		{
 			value: 'telegram',
 			label: 'Telegram',
 			description: 'Clean channel timeline',
-			gradient: 'linear-gradient(135deg, #2aabee, #229ed9)'
+			accentColor: '#2aabee'
 		}
 	];
 
@@ -316,12 +316,12 @@
 	}
 </script>
 
-<div class="flex h-full min-h-0 flex-col bg-gradient-to-b from-card to-card/50">
-	<div class="border-b border-border bg-card/80 p-5 backdrop-blur-sm">
+<div class="flex h-full min-h-0 flex-col bg-card">
+	<div class="border-b border-border bg-card p-5">
 		<div class="mb-2 flex items-center gap-3">
 			<div
 				class="flex h-10 w-10 items-center justify-center rounded-xl shadow-lg"
-				style="background: {activeTemplate.gradient};"
+				style="background-color: {activeTemplate.accentColor};"
 			>
 				<Layers class="h-5 w-5 text-white" />
 			</div>
@@ -399,7 +399,7 @@
 										class="rounded-lg border p-3 text-left transition-all hover:border-primary/60 {chatPlatform === template.value ? 'border-primary bg-primary/5 ring-2 ring-primary/20' : 'border-border bg-muted/20'}"
 										onclick={() => applyTemplate(template.value)}
 									>
-										<div class="mb-2 h-2.5 w-full rounded-full" style="background: {template.gradient};"></div>
+										<div class="mb-2 h-2.5 w-full rounded-full" style="background-color: {template.accentColor};"></div>
 										<div class="flex items-center justify-between gap-2">
 											<p class="text-sm font-semibold">{template.label}</p>
 											{#if chatPlatform === template.value}
@@ -828,7 +828,7 @@
 
 					<div class="h-2 w-full overflow-hidden rounded-full bg-secondary">
 						<div
-							class="h-full bg-gradient-to-r from-orange-500 to-teal-500 transition-all duration-300"
+							class="h-full bg-primary transition-all duration-300"
 							style="width: {exportProgress.percent}%"
 						></div>
 					</div>
@@ -866,7 +866,7 @@
 				</div>
 			{:else}
 				<Button
-					class="w-full bg-gradient-to-r from-orange-500 to-teal-500 text-white shadow-lg transition-all duration-200 hover:from-orange-600 hover:to-teal-600 hover:shadow-xl"
+					class="w-full bg-primary text-primary-foreground shadow-lg transition-all duration-200 hover:bg-primary/90 hover:shadow-xl"
 					onclick={onExportVideo}
 					disabled={isGenerating || messages.length === 0}
 					size="lg"

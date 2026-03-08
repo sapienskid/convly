@@ -465,10 +465,10 @@
 
 	function getMessagesPaneStyle(): string {
 		if (chatPlatform === 'whatsapp') {
-			return 'background-color: #e5ddd5; background-image: radial-gradient(rgba(17, 27, 33, 0.08) 0.8px, transparent 0.8px); background-size: 16px 16px;';
+			return 'background-color: #e5ddd5;';
 		}
 		if (chatPlatform === 'telegram') {
-			return 'background-color: #d7e7f5; background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.35) 25%, rgba(255, 255, 255, 0) 25%), linear-gradient(225deg, rgba(255, 255, 255, 0.35) 25%, rgba(255, 255, 255, 0) 25%); background-size: 24px 24px; background-position: 0 0, 12px 12px;';
+			return 'background-color: #d7e7f5;';
 		}
 		if (chatPlatform === 'messenger') {
 			return 'background-color: #ffffff;';
@@ -529,7 +529,7 @@
 	): string {
 		const shell = 'border-radius: 10px; overflow: hidden; background-clip: padding-box;';
 		if (chatPlatform === 'discord') {
-			return `${shell} border-left: 4px solid ${replyColor}; background: linear-gradient(90deg, ${replyColor}1f 0%, rgba(79, 84, 92, 0.14) 100%);`;
+			return `${shell} border-left: 4px solid ${replyColor}; background-color: rgba(79, 84, 92, 0.2);`;
 		}
 		if (chatPlatform === 'whatsapp') {
 			return `${shell} border-left: 3px solid ${replyColor}; background-color: ${isPrimarySpeaker ? 'rgba(0, 168, 132, 0.14)' : 'rgba(17, 27, 33, 0.08)'};`;
@@ -781,7 +781,7 @@
 										<!-- Group avatar circle -->
 										<div
 											class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden"
-											style="background: linear-gradient(135deg, {primaryColor}cc, {primaryColor}88); border-radius: 9999px; overflow: hidden;"
+											style="background-color: {primaryColor}; border-radius: 9999px; overflow: hidden;"
 										>
 											{#if channelAvatar}
 												<img
@@ -870,7 +870,7 @@
 										{:else}
 											<div
 												class="w-16 h-16 rounded-full flex items-center justify-center mb-4"
-												style="background: linear-gradient(135deg, {primaryColor}cc, {primaryColor}88);"
+												style="background-color: {primaryColor};"
 											>
 												<svg class="w-8 h-8" style="color: #ffffff;" fill="currentColor" viewBox="0 0 24 24">
 													<path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>

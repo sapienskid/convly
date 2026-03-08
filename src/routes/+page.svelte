@@ -1068,20 +1068,20 @@
 
 	<!-- Main Content Area - Conversation Editor -->
 	<div class="flex flex-1 flex-col border-r border-border bg-background">
-		<div class="flex items-center justify-between border-b border-border bg-card/70 px-4 py-2.5 backdrop-blur-sm">
-			<div class="flex items-center gap-3">
-				<Button size="sm" variant="outline" onclick={() => (isSceneManagerOpen = true)}>
+		<div class="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-card px-4 py-3">
+			<div class="flex min-w-0 flex-wrap items-center gap-2">
+				<Button size="sm" variant="outline" class="h-8" onclick={() => (isSceneManagerOpen = true)}>
 					<FolderOpen class="h-4 w-4 mr-1" />
 					Scenes
 				</Button>
-				<Button size="sm" variant="outline" onclick={() => (isCharacterManagerOpen = true)}>
+				<Button size="sm" variant="outline" class="h-8" onclick={() => (isCharacterManagerOpen = true)}>
 					Characters
 				</Button>
-				<div class="inline-flex rounded-md border border-border bg-muted/30 p-0.5">
+				<div class="inline-flex h-8 items-center rounded-lg border border-border bg-muted px-1">
 					<Button
 						size="sm"
 						variant={editorView === 'conversation' ? 'default' : 'ghost'}
-						class="h-7 text-xs"
+						class="h-6 px-3 text-xs"
 						onclick={() => setEditorMode('conversation')}
 					>
 						Conversation
@@ -1089,7 +1089,7 @@
 					<Button
 						size="sm"
 						variant={editorView === 'json' ? 'default' : 'ghost'}
-						class="h-7 text-xs"
+						class="h-6 px-3 text-xs"
 						onclick={() => setEditorMode('json')}
 					>
 						JSON
@@ -1098,13 +1098,13 @@
 			</div>
 			{#if editorView === 'json'}
 				<div class="flex items-center gap-2">
-					<Button size="sm" variant="outline" onclick={handleJsonReset}>Reset</Button>
-					<Button size="sm" onclick={handleJsonApply}>Apply JSON</Button>
+					<Button size="sm" variant="outline" class="h-8" onclick={handleJsonReset}>Reset</Button>
+					<Button size="sm" class="h-8" onclick={handleJsonApply}>Apply JSON</Button>
 				</div>
 			{:else}
 				<div class="flex items-center gap-2">
 					<span class="text-xs text-muted-foreground">{orderedMessages.length} messages</span>
-					<Button size="sm" onclick={handleAddMessage} disabled={$characters.length === 0}>
+					<Button size="sm" class="h-8" onclick={handleAddMessage} disabled={$characters.length === 0}>
 						<Plus class="h-4 w-4 mr-1" />
 						Add
 					</Button>
@@ -1295,9 +1295,9 @@
 	</div>
 
 	<!-- Preview Panel -->
-	<div class="w-[400px] flex-shrink-0 border-r border-border bg-gradient-to-b from-card to-card/50">
+	<div class="w-[400px] flex-shrink-0 border-r border-border bg-card">
 		<div class="flex h-full flex-col">
-			<div class="flex flex-1 items-center justify-center p-8 bg-gradient-to-b from-transparent to-accent/5">
+			<div class="flex flex-1 items-center justify-center bg-muted/20 p-8">
 				<div class="flex flex-col items-center gap-4">
 					<div bind:this={livePreviewCaptureElement}>
 							<PhonePreview
@@ -1322,7 +1322,6 @@
 							fps={$customizeSettings.fps}
 							onPlayPause={handleVideoPlayPause}
 							onRestart={handleVideoRestart}
-							onDownload={handleVideoDownload}
 							onSeek={handleVideoSeek}
 						/>
 					{/if}
