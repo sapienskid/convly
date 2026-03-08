@@ -91,7 +91,7 @@
 			
 			// Try to match existing role color to a predefined role
 			const matchedRole = roles.find(r => r.color === character.roleColor);
-			roleTitle = matchedRole?.title || 'Member';
+			roleTitle = character.roleTitle || matchedRole?.title || 'Member';
 			
 			// Check if avatar is a custom URL
 			if (character.avatar && !character.avatar.includes('dicebear.com')) {
@@ -125,7 +125,8 @@
 		updateCharacter(character.id, {
 			username: username.trim(),
 			avatar,
-			roleColor: roleColor
+			roleColor: roleColor,
+			roleTitle: roleTitle
 		});
 
 		const aura: CharacterAura = {

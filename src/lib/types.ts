@@ -4,6 +4,7 @@ export interface Character {
 	username: string;
 	avatar: string;
 	roleColor: string;
+	roleTitle?: string;
 	position: { x: number; y: number };
 	rotation?: number;
 	aura?: CharacterAura;

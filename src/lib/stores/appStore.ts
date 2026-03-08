@@ -604,6 +604,9 @@ export function updateCharacter(id: string, updates: Partial<Character>) {
 	characters.update((chars) =>
 		chars.map((char) => (char.id === id ? { ...char, ...updates } : char))
 	);
+	if (typeof window !== 'undefined' && get(isInitialized)) {
+		saveNow('characters', get(characters));
+	}
 }
 
 export function deleteCharacter(id: string) {
@@ -1402,4 +1405,7 @@ export function updateCharacterAura(id: string, aura: CharacterAura) {
 	characters.update((chars) =>
 		chars.map((char) => (char.id === id ? { ...char, aura } : char))
 	);
+	if (typeof window !== 'undefined' && get(isInitialized)) {
+		saveNow('characters', get(characters));
+	}
 }
