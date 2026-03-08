@@ -343,15 +343,42 @@ export const isGenerating = writable<boolean>(false);
 
 export const customizeSettings = writable<CustomizationSettings>(defaultCustomizationSettings);
 
-let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+type PersistedStoreKey = 'characters' | 'messages' | 'connections' | 'customizeSettings' | 'scenes';
+const saveTimeoutByKey: Partial<Record<PersistedStoreKey, ReturnType<typeof setTimeout>>> = {};
 
-function debouncedSave(key: string, value: any) {
-	if (saveTimeout) {
-		clearTimeout(saveTimeout);
-	}
-	saveTimeout = setTimeout(() => {
-		saveToIndexedDB(key as any, value).catch(console.error);
+function clearDebouncedSave(key: PersistedStoreKey) {
+	const timeout = saveTimeoutByKey[key];
+	if (!timeout) return;
+	clearTimeout(timeout);
+	delete saveTimeoutByKey[key];
+}
+
+function saveNow(key: PersistedStoreKey, value: unknown) {
+	clearDebouncedSave(key);
+	void saveToIndexedDB(key as any, value as any).catch(console.error);
+}
+
+function debouncedSave(key: PersistedStoreKey, value: unknown) {
+	clearDebouncedSave(key);
+	saveTimeoutByKey[key] = setTimeout(() => {
+		delete saveTimeoutByKey[key];
+		void saveToIndexedDB(key as any, value as any).catch(console.error);
 	}, 300);
+}
+
+function persistConversationStateNow() {
+	if (typeof window === 'undefined' || !get(isInitialized)) return;
+	saveNow('characters', get(characters));
+	saveNow('messages', get(messages));
+	saveNow('connections', get(connections));
+}
+
+function persistProjectStateNow() {
+	if (typeof window === 'undefined' || !get(isInitialized)) return;
+	saveNow('characters', get(characters));
+	saveNow('messages', get(messages));
+	saveNow('connections', get(connections));
+	saveNow('customizeSettings', get(customizeSettings));
 }
 
 if (typeof window !== 'undefined') {
@@ -885,11 +912,36 @@ export function importConversationFromJSON(payload: unknown) {
 		);
 	}
 
+	const existingCharacters = get(characters);
+	const existingCharacterById = new Map(existingCharacters.map((character) => [character.id, character]));
+	const speakerKey = (value: string) => value.trim().toLowerCase();
+	const existingCharacterBySpeaker = new Map(
+		existingCharacters.map((character) => [speakerKey(character.username), character])
+	);
+
 	const normalizedEntries = entries
 		.map((entry, index) => {
+			const sourceCharacterId =
+				readFirstString(entry, ['characterId', 'character_id', 'speakerId', 'speaker_id', 'authorId', 'author_id']) ??
+				null;
+			const namedSpeaker = readFirstString(entry, [
+				'speaker',
+				'character',
+				'characterName',
+				'character_name',
+				'username',
+				'author',
+				'name',
+				'role'
+			]);
+			const speakerFromCharacterId =
+				sourceCharacterId && existingCharacterById.has(sourceCharacterId)
+					? existingCharacterById.get(sourceCharacterId)!.username
+					: null;
 			const speaker =
-				readFirstString(entry, ['speaker', 'character', 'username', 'author', 'name', 'role']) ||
-				`Speaker ${index + 1}`;
+				namedSpeaker ??
+				speakerFromCharacterId ??
+				(sourceCharacterId ? `Speaker ${sourceCharacterId}` : `Speaker ${index + 1}`);
 			const text = readMessageText(entry);
 			const timestamp =
 				readFirstString(entry, ['timestamp', 'createdAt', 'time']) || new Date().toISOString();
@@ -918,8 +970,11 @@ export function importConversationFromJSON(payload: unknown) {
 	}
 
 	const uniqueSpeakers: string[] = [];
+	const seenSpeakers = new Set<string>();
 	for (const entry of normalizedEntries) {
-		if (!uniqueSpeakers.includes(entry.speaker)) {
+		const key = speakerKey(entry.speaker);
+		if (!seenSpeakers.has(key)) {
+			seenSpeakers.add(key);
 			uniqueSpeakers.push(entry.speaker);
 		}
 	}
@@ -927,17 +982,28 @@ export function importConversationFromJSON(payload: unknown) {
 	const colorPalette = ['#ff6f3b', '#0ea5a4', '#2563eb', '#f59e0b', '#ef4444', '#14b8a6', '#0f766e', '#64748b'];
 	const speakerMap = new Map<string, Character>();
 	const importedCharacters: Character[] = uniqueSpeakers.map((speaker, index) => {
-		const id = `char-import-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`;
+		const existingCharacter = existingCharacterBySpeaker.get(speakerKey(speaker));
+		const id = existingCharacter?.id ?? `char-import-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`;
 		const character: Character = {
 			id,
 			username: speaker,
-			avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(
-				speaker
-			)}&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90`,
-			roleColor: colorPalette[index % colorPalette.length],
-			position: { x: 100, y: 80 + index * 180 }
+			avatar:
+				existingCharacter?.avatar ??
+				`https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(
+					speaker
+				)}&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90`,
+			roleColor: existingCharacter?.roleColor ?? colorPalette[index % colorPalette.length],
+			position: existingCharacter
+				? { ...existingCharacter.position }
+				: { x: 100, y: 80 + index * 180 }
 		};
-		speakerMap.set(speaker, character);
+		if (existingCharacter?.aura) {
+			character.aura = {
+				...existingCharacter.aura,
+				keywords: [...existingCharacter.aura.keywords]
+			};
+		}
+		speakerMap.set(speakerKey(speaker), character);
 		return character;
 	});
 
@@ -948,7 +1014,8 @@ export function importConversationFromJSON(payload: unknown) {
 
 	for (const [index, entry] of normalizedEntries.entries()) {
 		const id = `msg-import-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 6)}`;
-		const speakerCharacter = speakerMap.get(entry.speaker)!;
+		const speakerCharacter = speakerMap.get(speakerKey(entry.speaker));
+		if (!speakerCharacter) continue;
 		const parsedTime = Date.parse(entry.timestamp);
 		const timestamp = Number.isFinite(parsedTime)
 			? new Date(parsedTime).toISOString()
@@ -1041,6 +1108,7 @@ export function importConversationFromJSON(payload: unknown) {
 	connections.set(normalizedConnections);
 	previewState.set('preview');
 	propagateSpeakerAssignments();
+	persistConversationStateNow();
 
 	return {
 		characters: importedCharacters.length,
@@ -1085,12 +1153,13 @@ export function importProjectData(payload: unknown) {
 
 	const projectCustomizeSettings = asRecord(record.customizeSettings);
 	if (projectCustomizeSettings) {
-		customizeSettings.update((settings) => ({
-			...settings,
+		customizeSettings.set({
+			...get(customizeSettings),
 			...(projectCustomizeSettings as Partial<CustomizationSettings>),
 			resolution: 'vertical-1080x1920'
-		}));
+		});
 	}
+	persistProjectStateNow();
 
 	return {
 		characters: projectCharacters.length,
