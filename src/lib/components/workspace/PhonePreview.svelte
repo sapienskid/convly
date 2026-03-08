@@ -54,6 +54,8 @@
 		x: number;
 		y: number;
 	} | null>(null);
+	let bottomLockFrame = 0;
+	let bottomLockSettledFrame = 0;
 
 	const messageFlowInfo = $derived(analyzeMessageFlow(messages, connections));
 	const orderedPreviewMessages = $derived(messageFlowInfo.map((info) => info.message));
@@ -64,12 +66,16 @@
 		buildMessageAnimationTimeline(messages, connections, {
 			messageDuration: customizeSettings.messageDuration,
 			transitionDuration: customizeSettings.transitionDuration,
+			messageAnimationStyle: customizeSettings.messageAnimationStyle,
 			enableTransitions: customizeSettings.enableTransitions
 		})
 	);
 
 	const playbackState = $derived.by(() =>
 		previewState === 'video' ? resolvePlaybackState(timeline, currentTime) : null
+	);
+	const primarySpeakerId = $derived.by(
+		() => characters[0]?.id ?? timeline.orderedMessages[0]?.characterId ?? null
 	);
 
 	const renderedMessages = $derived.by(() => {
@@ -89,14 +95,32 @@
 		new Map(renderedMessages.map((rendered) => [rendered.message.id, rendered.text]))
 	);
 
-	const typingIndicatorCharacterId = $derived(
-		previewState === 'video' ? playbackState?.typingIndicatorCharacterId ?? null : null
+	const typingIndicatorCharacterIds = $derived.by(() => {
+		if (previewState !== 'video' || !playbackState) return [];
+		const ids = playbackState.typingIndicatorCharacterIds ?? [];
+		if (ids.length > 0) return ids;
+		return playbackState.typingIndicatorCharacterId
+			? [playbackState.typingIndicatorCharacterId]
+			: [];
+	});
+	const typingIndicatorCharacters = $derived.by(() =>
+		typingIndicatorCharacterIds
+			.map((characterId) => characterMap.get(characterId))
+			.filter((character): character is Character => Boolean(character))
 	);
-	const typingIndicatorCharacter = $derived(
-		typingIndicatorCharacterId
-			? (characterMap.get(typingIndicatorCharacterId) ?? null)
-			: null
-	);
+	const visibleTypingIndicatorCharacters = $derived.by(() => {
+		const primaryId = primarySpeakerId;
+		if (!primaryId) return typingIndicatorCharacters;
+		return typingIndicatorCharacters.filter((character) => character.id !== primaryId);
+	});
+	const firstTypingIndicatorCharacter = $derived(visibleTypingIndicatorCharacters[0] ?? null);
+	const typingIndicatorLabel = $derived.by(() => {
+		const names = visibleTypingIndicatorCharacters.map((character) => character.username);
+		if (names.length === 0) return '';
+		if (names.length === 1) return `${names[0]} is typing...`;
+		if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`;
+		return `${names[0]}, ${names[1]} and ${names.length - 2} others are typing...`;
+	});
 	const canCompose = $derived(interactive && previewState === 'preview');
 	const replyTargetMessage = $derived(
 		replyTargetId ? messageMap.get(replyTargetId) ?? null : null
@@ -214,7 +238,6 @@
 	const messagePadding = $derived(customizeSettings.messagePadding || 16);
 	const showAvatars = $derived(customizeSettings.showAvatars ?? true);
 	const showTimestamps = $derived(customizeSettings.showTimestamps ?? true);
-	const primarySpeakerId = $derived(characters[0]?.id ?? null);
 
 	const fontWeightValue = $derived(
 		fontWeight === 'light'
@@ -232,26 +255,52 @@
 
 	const scrollSignal = $derived.by(() => {
 		const lastMessage = renderedMessages[renderedMessages.length - 1];
-		return `${previewState}:${renderedMessages.length}:${lastMessage?.message.id ?? ''}:${lastMessage?.text.length ?? 0}:${typingIndicatorCharacterId ?? ''}`;
+		return `${previewState}:${renderedMessages.length}:${lastMessage?.message.id ?? ''}:${lastMessage?.text.length ?? 0}:${typingIndicatorCharacterIds.join('|')}:${typingIndicatorLabel}`;
 	});
+
+	function lockMessagesViewportToBottom() {
+		if (!messagesViewport) return;
+		const setBottom = () => {
+			if (!messagesViewport) return;
+			messagesViewport.scrollTop = Math.max(
+				0,
+				messagesViewport.scrollHeight - messagesViewport.clientHeight
+			);
+		};
+		setBottom();
+		if (bottomLockFrame || bottomLockSettledFrame) return;
+		bottomLockFrame = requestAnimationFrame(() => {
+			bottomLockFrame = 0;
+			setBottom();
+			bottomLockSettledFrame = requestAnimationFrame(() => {
+				bottomLockSettledFrame = 0;
+				setBottom();
+			});
+		});
+	}
+
+	function cancelBottomLockFrames() {
+		if (bottomLockFrame) {
+			cancelAnimationFrame(bottomLockFrame);
+			bottomLockFrame = 0;
+		}
+		if (bottomLockSettledFrame) {
+			cancelAnimationFrame(bottomLockSettledFrame);
+			bottomLockSettledFrame = 0;
+		}
+	}
 
 	$effect(() => {
 		scrollSignal;
 		if (!messagesViewport) return;
 
-		const target = Math.max(0, messagesViewport.scrollHeight - messagesViewport.clientHeight);
-		if (previewState !== 'video') {
-			messagesViewport.scrollTop = target;
-			return;
-		}
+		lockMessagesViewportToBottom();
+	});
 
-		const delta = target - messagesViewport.scrollTop;
-		if (Math.abs(delta) <= 1) {
-			messagesViewport.scrollTop = target;
-			return;
-		}
-
-		messagesViewport.scrollTop = messagesViewport.scrollTop + delta * 0.22;
+	$effect(() => {
+		return () => {
+			cancelBottomLockFrames();
+		};
 	});
 
 	$effect(() => {
@@ -608,6 +657,13 @@
 		if (chatPlatform === 'discord') return 'background-color: #bcc3ce;';
 		if (chatPlatform === 'messenger') return 'background-color: #708397;';
 		return 'background-color: #7d8c99;';
+	}
+
+	function getTypingIndicatorLabelStyle(): string {
+		if (chatPlatform === 'discord') return 'color: #a0a8b8;';
+		if (chatPlatform === 'whatsapp') return 'color: #667781;';
+		if (chatPlatform === 'messenger') return 'color: #65676b;';
+		return 'color: #708397;';
 	}
 
 	function getComposerBarStyle(): string {
@@ -988,27 +1044,31 @@
 										</div>
 									{/each}
 
-									{#if typingIndicatorCharacter}
-										{@const typingIsPrimary = typingIndicatorCharacter.id === primarySpeakerId}
+									{#if visibleTypingIndicatorCharacters.length > 0 && firstTypingIndicatorCharacter}
 										<div
-											class="flex items-end gap-2 {chatPlatform !== 'discord' && typingIsPrimary ? 'justify-end' : ''}"
+											class="flex items-end gap-2"
 											style="padding: {messagePadding / 4}px {messagePadding / 2}px;"
 										>
-											{#if shouldShowAvatarForMessage(typingIsPrimary, false)}
+											{#if shouldShowAvatarForMessage(false, false)}
 												<Avatar class="w-9 h-9 flex-shrink-0 mt-0.5" style="border-radius: 50%; overflow: hidden;">
-													<AvatarImage src={typingIndicatorCharacter.avatar} alt={typingIndicatorCharacter.username} style="border-radius: 50%; width: 100%; height: 100%; object-fit: cover;" />
+													<AvatarImage src={firstTypingIndicatorCharacter.avatar} alt={firstTypingIndicatorCharacter.username} style="border-radius: 50%; width: 100%; height: 100%; object-fit: cover;" />
 													<AvatarFallback
 														class="text-white text-xs font-semibold"
-														style="background-color: {typingIndicatorCharacter.roleColor}; border-radius: 50%; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"
+														style="background-color: {firstTypingIndicatorCharacter.roleColor}; border-radius: 50%; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;"
 													>
-														{typingIndicatorCharacter.username.slice(0, 2).toUpperCase()}
+														{firstTypingIndicatorCharacter.username.slice(0, 2).toUpperCase()}
 													</AvatarFallback>
 												</Avatar>
 											{/if}
-											<div class="rounded-2xl px-3 py-2 inline-flex items-center gap-1.5" style={getTypingBubbleStyle()}>
-												<span class="h-1.5 w-1.5 rounded-full" style={`${getTypingDotStyle()} transform: translateY(${Math.sin((currentTime * 8) + 0) * -2.5 + 1.25}px);`}></span>
-												<span class="h-1.5 w-1.5 rounded-full" style={`${getTypingDotStyle()} transform: translateY(${Math.sin((currentTime * 8) - 1.5) * -2.5 + 1.25}px);`}></span>
-												<span class="h-1.5 w-1.5 rounded-full" style={`${getTypingDotStyle()} transform: translateY(${Math.sin((currentTime * 8) - 3.0) * -2.5 + 1.25}px);`}></span>
+											<div class="min-w-0">
+												<div class="mb-1 text-[10px] font-medium" style={getTypingIndicatorLabelStyle()}>
+													{typingIndicatorLabel}
+												</div>
+												<div class="rounded-2xl px-3 py-2 inline-flex items-center gap-1.5" style={getTypingBubbleStyle()}>
+													<span class="h-1.5 w-1.5 rounded-full" style={`${getTypingDotStyle()} transform: translateY(${Math.sin((currentTime * 8) + 0) * -2.5 + 1.25}px);`}></span>
+													<span class="h-1.5 w-1.5 rounded-full" style={`${getTypingDotStyle()} transform: translateY(${Math.sin((currentTime * 8) - 1.5) * -2.5 + 1.25}px);`}></span>
+													<span class="h-1.5 w-1.5 rounded-full" style={`${getTypingDotStyle()} transform: translateY(${Math.sin((currentTime * 8) - 3.0) * -2.5 + 1.25}px);`}></span>
+												</div>
 											</div>
 										</div>
 									{/if}
