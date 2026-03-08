@@ -148,6 +148,7 @@
 	const primaryColor = $derived(customizeSettings.primaryColor || platformTheme.primaryColor);
 	const textColor = $derived(customizeSettings.textColor || platformTheme.textColor);
 	const channelName = $derived(customizeSettings.channelName || 'announcements');
+	const channelAvatar = $derived(customizeSettings.channelAvatar || '');
 	const channelPrefix = $derived.by(() => {
 		if (chatPlatform === 'discord') return '#';
 		return '';
@@ -811,7 +812,9 @@
 											class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden"
 											style="background: linear-gradient(135deg, {primaryColor}cc, {primaryColor}88);"
 										>
-											{#if characters.length > 0 && characters[0].avatar}
+											{#if channelAvatar}
+												<img src={channelAvatar} alt="Chat Logo" class="w-full h-full object-cover rounded-full" />
+											{:else if characters.length > 0 && characters[0].avatar}
 												<img src={characters[0].avatar} alt="Group" class="w-full h-full object-cover rounded-full" />
 											{:else}
 												<svg class="w-4 h-4" style="color: #ffffff;" fill="currentColor" viewBox="0 0 24 24">

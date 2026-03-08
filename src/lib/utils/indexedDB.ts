@@ -3,11 +3,12 @@ import {
 	type Character,
 	type Message,
 	type Connection,
-	type CustomizationSettings
+	type CustomizationSettings,
+	type Scene
 } from '$lib/types';
 
 const DB_NAME = 'convly-studio-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 interface ConvlyDB {
 	characters: Character[];
@@ -15,6 +16,7 @@ interface ConvlyDB {
 	connections: Connection[];
 	customizeSettings: CustomizationSettings;
 	viewport: { x: number; y: number; zoom: number } | null;
+	scenes: Scene[];
 }
 
 const defaultData: ConvlyDB = {
@@ -22,7 +24,8 @@ const defaultData: ConvlyDB = {
 	messages: [],
 	connections: [],
 	customizeSettings: defaultCustomizationSettings,
-	viewport: null
+	viewport: null,
+	scenes: []
 };
 
 let dbInstance: IDBDatabase | null = null;
@@ -66,7 +69,7 @@ export async function loadFromIndexedDB(): Promise<ConvlyDB> {
 			
 			const data: Partial<ConvlyDB> = {};
 			let completed = 0;
-			const keys: (keyof ConvlyDB)[] = ['characters', 'messages', 'connections', 'customizeSettings', 'viewport'];
+			const keys: (keyof ConvlyDB)[] = ['characters', 'messages', 'connections', 'customizeSettings', 'viewport', 'scenes'];
 			
 			keys.forEach((key) => {
 				const request = store.get(key);
@@ -87,7 +90,8 @@ export async function loadFromIndexedDB(): Promise<ConvlyDB> {
 							messages: data.messages || defaultData.messages,
 							connections: data.connections || defaultData.connections,
 							customizeSettings: mergedCustomizeSettings,
-							viewport: data.viewport || defaultData.viewport
+							viewport: data.viewport || defaultData.viewport,
+							scenes: data.scenes || defaultData.scenes
 						});
 					}
 				};
@@ -180,6 +184,9 @@ export async function importProject(jsonString: string): Promise<ConvlyDB> {
 		}
 		if (data.customizeSettings) {
 			await saveToIndexedDB('customizeSettings', data.customizeSettings);
+		}
+		if (data.scenes) {
+			await saveToIndexedDB('scenes', data.scenes);
 		}
 		
 		return await loadFromIndexedDB();

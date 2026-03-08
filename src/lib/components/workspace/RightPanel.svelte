@@ -31,7 +31,8 @@
 		Download,
 		X,
 		ShieldAlert,
-		Wrench
+		Wrench,
+		User
 	} from '@lucide/svelte/icons';
 	import { buildMessageAnimationTimeline } from '$lib/utils/animationTimeline';
 	import {
@@ -84,6 +85,7 @@
 	}: Props = $props();
 
 	let channelName = $state(customizeSettings.channelName);
+	let channelAvatar = $state(customizeSettings.channelAvatar ?? '');
 	let chatPlatform = $state<ChatPlatformSetting>(customizeSettings.chatPlatform ?? 'discord');
 	let resolution = $state(customizeSettings.resolution);
 	let fps = $state(customizeSettings.fps);
@@ -227,6 +229,7 @@
 
 	$effect(() => {
 		channelName = customizeSettings.channelName;
+		channelAvatar = customizeSettings.channelAvatar ?? '';
 		chatPlatform = customizeSettings.chatPlatform ?? 'discord';
 		resolution = customizeSettings.resolution;
 		fps = customizeSettings.fps;
@@ -281,6 +284,26 @@
 				? `Auto-fix updated ${fixedCount} issue(s).`
 				: 'No changes were required.';
 	}
+
+	function handleAvatarUpload(event: Event) {
+		const input = event.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = (e) => {
+			const result = e.target?.result;
+			if (typeof result === 'string') {
+				channelAvatar = result;
+				onCustomizationApply({ channelAvatar: result });
+			}
+		};
+		reader.readAsDataURL(file);
+	}
+
+	function clearChannelAvatar() {
+		channelAvatar = '';
+		onCustomizationApply({ channelAvatar: '' });
+	}
 </script>
 
 <div class="flex h-full min-h-0 flex-col bg-gradient-to-b from-card to-card/50">
@@ -324,6 +347,39 @@
 									onblur={applyChannelName}
 									placeholder={templateDefaults[chatPlatform]}
 								/>
+							</div>
+
+							<div>
+								<Label class="text-sm">Chat Logo</Label>
+								<div class="mt-1.5 flex items-center gap-3">
+									<div
+										class="flex h-12 w-12 items-center justify-center rounded-full overflow-hidden border border-border bg-muted"
+									>
+										{#if channelAvatar}
+											<img src={channelAvatar} alt="Chat Logo" class="h-full w-full object-cover" />
+										{:else}
+											<User class="h-5 w-5 text-muted-foreground" />
+										{/if}
+									</div>
+									<div class="flex flex-col gap-1.5">
+										<Input
+											type="file"
+											accept="image/*"
+											class="h-8 w-full max-w-[160px] text-xs"
+											onchange={handleAvatarUpload}
+										/>
+										{#if channelAvatar}
+											<button
+												type="button"
+												class="text-xs text-muted-foreground hover:text-destructive text-left w-fit"
+												onclick={clearChannelAvatar}
+											>
+												Remove logo
+											</button>
+										{/if}
+									</div>
+								</div>
+								<p class="mt-1.5 text-xs text-muted-foreground">Upload a custom logo for the chat header</p>
 							</div>
 
 							<div class="grid grid-cols-1 gap-2">

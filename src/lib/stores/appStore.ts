@@ -5,7 +5,9 @@ import {
 	type Message,
 	type Connection,
 	type PreviewState,
-	type CustomizationSettings
+	type CustomizationSettings,
+	type Scene,
+	type CharacterAura
 } from '$lib/types';
 import { loadFromIndexedDB, saveToIndexedDB } from '$lib/utils/indexedDB';
 import { analyzeMessageFlow } from '$lib/utils/messageFlow';
@@ -20,21 +22,39 @@ const demoCharacters: Character[] = [
 		username: 'Alex Chen',
 		avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=AlexChen&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90',
 		roleColor: '#2563eb',
-		position: { x: 100, y: 100 }
+		position: { x: 100, y: 100 },
+		aura: {
+			description: 'Team lead who is organized, clear, and gets straight to the point. Focuses on outcomes and next steps.',
+			tone: 'professional',
+			speakingStyle: 'direct',
+			keywords: ['organized', 'results-focused', 'clear', 'efficient']
+		}
 	},
 	{
 		id: 'char-demo-2',
 		username: 'Sarah Wilson',
 		avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=SarahWilson&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90',
 		roleColor: '#ff6f3b',
-		position: { x: 100, y: 300 }
+		position: { x: 100, y: 300 },
+		aura: {
+			description: 'Creative designer who is enthusiastic, detail-oriented, and loves brainstorming ideas.',
+			tone: 'friendly',
+			speakingStyle: 'enthusiastic',
+			keywords: ['creative', 'detail-oriented', 'visual', 'brainstorming']
+		}
 	},
 	{
 		id: 'char-demo-3',
 		username: 'Priya Nair',
 		avatar: 'https://api.dicebear.com/7.x/notionists/svg?seed=PriyaNair&backgroundColor=fde8db,bdeee8,fbe7b2&scale=90',
 		roleColor: '#0ea5a4',
-		position: { x: 100, y: 500 }
+		position: { x: 100, y: 500 },
+		aura: {
+			description: 'Technical producer who is analytical, thorough, and always thinking about edge cases.',
+			tone: 'calm',
+			speakingStyle: 'analytical',
+			keywords: ['technical', 'thorough', 'quality', 'testing']
+		}
 	}
 ];
 
@@ -139,6 +159,8 @@ export const isInitialized = writable(false);
 export const characters = writable<Character[]>([]);
 export const messages = writable<Message[]>([]);
 export const connections = writable<Connection[]>([]);
+export const scenes = writable<Scene[]>([]);
+export const activeSceneId = writable<string | null>(null);
 
 function mergeCustomizationSettings(
 	settings?: Partial<CustomizationSettings> | Record<string, unknown> | null
@@ -290,6 +312,10 @@ export async function initializeStore() {
 		messages.set(loadedMessages);
 		connections.set(normalizedConnections);
 		
+		if (data.scenes && data.scenes.length > 0) {
+			scenes.set(data.scenes);
+		}
+		
 		customizeSettings.set(mergeCustomizationSettings(data.customizeSettings));
 	} catch (error) {
 		console.error('Failed to load from IndexedDB, using demo data:', error);
@@ -350,6 +376,12 @@ if (typeof window !== 'undefined') {
 	customizeSettings.subscribe((value) => {
 		if (get(isInitialized)) {
 			debouncedSave('customizeSettings', value);
+		}
+	});
+	
+	scenes.subscribe((value) => {
+		if (get(isInitialized)) {
+			debouncedSave('scenes', value);
 		}
 	});
 }
@@ -1110,4 +1142,166 @@ export function handleTemplateSelect(template: any) {
 
 export function handleApplyCustomization(settings: Partial<CustomizationSettings>) {
 	customizeSettings.update((s) => ({ ...s, ...settings, resolution: 'vertical-1080x1920' }));
+}
+
+// Scene Management
+export function addScene(scene: Omit<Scene, 'id' | 'createdAt' | 'updatedAt'>): string {
+	const id = `scene-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+	const now = new Date().toISOString();
+	const newScene: Scene = {
+		...scene,
+		id,
+		createdAt: now,
+		updatedAt: now
+	};
+	scenes.update((s) => [...s, newScene]);
+	return id;
+}
+
+export function updateScene(id: string, updates: Partial<Omit<Scene, 'id' | 'createdAt'>>) {
+	scenes.update((s) =>
+		s.map((scene) =>
+			scene.id === id
+				? { ...scene, ...updates, updatedAt: new Date().toISOString() }
+				: scene
+		)
+	);
+}
+
+export function deleteScene(id: string) {
+	scenes.update((s) => s.filter((scene) => scene.id !== id));
+	const currentActive = get(activeSceneId);
+	if (currentActive === id) {
+		activeSceneId.set(null);
+	}
+}
+
+export function loadSceneCharacters(sceneId: string) {
+	const allScenes = get(scenes);
+	const scene = allScenes.find((s) => s.id === sceneId);
+	if (!scene) return;
+
+	const allCharacters = get(characters);
+	const sceneCharacters = allCharacters.filter((c) => scene.characterIds.includes(c.id));
+	
+	characters.set(sceneCharacters);
+	messages.set([]);
+	connections.set([]);
+	activeSceneId.set(sceneId);
+	
+	previewState.set('preview');
+	propagateSpeakerAssignments();
+}
+
+export function saveCurrentAsScene(name: string, description: string, aura: string, characterIds?: string[]) {
+	const allCharacters = get(characters);
+	const currentSceneId = get(activeSceneId);
+	
+	const sceneData: Omit<Scene, 'id' | 'createdAt' | 'updatedAt'> = {
+		name,
+		description,
+		characterIds: characterIds || allCharacters.map((c) => c.id),
+		aura
+	};
+
+	if (currentSceneId) {
+		updateScene(currentSceneId, sceneData);
+	} else {
+		addScene(sceneData);
+	}
+}
+
+export function generateScenePrompt(): string {
+	const allScenes = get(scenes);
+	const currentSceneId = get(activeSceneId);
+	const allCharacters = get(characters);
+	const allMessages = get(messages);
+	
+	let sceneCharacters = allCharacters;
+	let scene: Scene | undefined;
+	
+	if (currentSceneId) {
+		scene = allScenes.find((s) => s.id === currentSceneId);
+		if (scene) {
+			sceneCharacters = allCharacters.filter((c) => scene!.characterIds.includes(c.id));
+		}
+	}
+
+	const characterList = sceneCharacters
+		.map((char) => {
+			const aura = char.aura;
+			if (aura && aura.description) {
+				return `- ${char.username}
+  Personality: ${aura.description}
+  Tone: ${aura.tone}
+  Speaking Style: ${aura.speakingStyle}
+  Keywords: ${aura.keywords.join(', ')}`;
+			}
+			return `- ${char.username} (no personality defined)`;
+		})
+		.join('\n');
+
+	let sceneContext = '';
+	if (scene) {
+		sceneContext = `
+## Scene Context
+- Scene Name: ${scene.name}
+- Description: ${scene.description || 'N/A'}
+- Setting/Atmosphere: ${scene.aura || 'N/A'}`;
+	}
+
+	// Get messages for current scene characters only
+	const sceneMessageIds = new Set(sceneCharacters.map(c => c.id));
+	const sceneMessages = allMessages
+		.filter(msg => sceneMessageIds.has(msg.characterId || ''))
+		.slice(0, 5); // Limit to 5 messages max
+
+	// Build a map of message ID to index for replyTo conversion
+	const messageIdToIndex = new Map<string, number>();
+	sceneMessages.forEach((msg, idx) => messageIdToIndex.set(msg.id, idx));
+
+	const conversationExample = sceneMessages
+		.map((msg, index) => {
+			const char = sceneCharacters.find(c => c.id === msg.characterId);
+			const speaker = char ? char.username : 'Unknown';
+			// Convert replyTo ID to array index
+			let replyInfo = '';
+			if (msg.replyTo) {
+				const replyIndex = messageIdToIndex.get(msg.replyTo);
+				if (replyIndex !== undefined) {
+					replyInfo = `, "replyTo": ${replyIndex}`;
+				}
+			}
+			return `  { "speaker": "${speaker}", "text": "${msg.text.replace(/"/g, '\\"').replace(/\n/g, ' ')}"${replyInfo} }`;
+		})
+		.join(',\n');
+
+	return `# AI Dialogue Generation Prompt
+
+## Characters
+${characterList}
+${sceneContext}
+
+## Output Format
+[
+  { "speaker": "CharacterName", "text": "message" },
+  { "speaker": "CharacterName", "text": "message", "replyTo": 0 }
+]
+
+## Example Conversation
+[
+${conversationExample}
+]
+
+## Instructions
+- Generate natural dialogue based on character personalities and scene context
+- Each "speaker" must match exactly one character name above
+- Use "replyTo" with the array index of the message being replied to
+- Return ONLY the JSON array, no other text`;
+}
+
+export function updateCharacterAura(id: string, aura: CharacterAura) {
+	characters.update((chars) =>
+		chars.map((char) => (char.id === id ? { ...char, aura } : char))
+	);
 }

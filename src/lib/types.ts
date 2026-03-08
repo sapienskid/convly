@@ -6,6 +6,7 @@ export interface Character {
 	roleColor: string;
 	position: { x: number; y: number };
 	rotation?: number;
+	aura?: CharacterAura;
 }
 
 export interface Message {
@@ -45,6 +46,7 @@ export type ChatPlatformSetting = 'discord' | 'whatsapp' | 'messenger' | 'telegr
 
 export interface CustomizationSettings {
 	channelName: string;
+	channelAvatar: string;
 	chatPlatform: ChatPlatformSetting;
 	backgroundColor: string;
 	backgroundImage: string;
@@ -75,6 +77,7 @@ export interface CustomizationSettings {
 
 export const defaultCustomizationSettings: CustomizationSettings = {
 	channelName: 'announcements',
+	channelAvatar: '',
 	chatPlatform: 'discord',
 	backgroundColor: '#313338',
 	backgroundImage: '',
@@ -104,3 +107,26 @@ export const defaultCustomizationSettings: CustomizationSettings = {
 };
 
 export type PreviewState = 'preview' | 'loading' | 'video';
+
+export interface CharacterAura {
+	description: string;
+	tone: string;
+	speakingStyle: string;
+	keywords: string[];
+}
+
+export interface Scene {
+	id: string;
+	name: string;
+	description: string;
+	characterIds: string[];
+	aura: string;
+	createdAt: string;
+	updatedAt: string;
+}
+
+export interface SceneExport {
+	version: number;
+	scene: Scene;
+	characters: Character[];
+}

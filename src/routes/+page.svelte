@@ -5,9 +5,10 @@
 	import VideoControls from '$lib/components/workspace/VideoControls.svelte';
 	import CharacterEditor from '$lib/components/workspace/CharacterEditor.svelte';
 	import CharacterManagerDialog from '$lib/components/workspace/CharacterManagerDialog.svelte';
+	import SceneManagerDialog from '$lib/components/workspace/SceneManagerDialog.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Select, SelectContent, SelectItem, SelectTrigger } from '$lib/components/ui/select';
-	import { ChevronRight, ChevronLeft, Plus, Trash2, GripVertical, Reply } from '@lucide/svelte/icons';
+	import { ChevronRight, ChevronLeft, Plus, Trash2, GripVertical, Reply, FolderOpen } from '@lucide/svelte/icons';
 	import { onMount, tick } from 'svelte';
 	import { initializeStore, isInitialized } from '$lib/stores/appStore';
 	import { buildMessageAnimationTimeline } from '$lib/utils/animationTimeline';
@@ -16,6 +17,7 @@
 	
 	let isRightPanelCollapsed = $state(true);
 	let isCharacterManagerOpen = $state(false);
+	let isSceneManagerOpen = $state(false);
 	let editorView = $state<'conversation' | 'json'>('conversation');
 	let jsonEditorValue = $state('');
 	let jsonEditorError = $state<string | null>(null);
@@ -658,6 +660,7 @@
 		updateCharacter,
 		addMessageForCharacter,
 		importConversationFromJSON,
+		importProjectData,
 		sendMessageFromPreview,
 		applyConversationQAFix,
 		handleApplyCustomization,
@@ -666,7 +669,14 @@
 		addMessage,
 		deleteMessage,
 		deleteConnection,
-		addConnection
+		addConnection,
+		scenes,
+		activeSceneId,
+		addScene,
+		loadSceneCharacters,
+		deleteScene,
+		saveCurrentAsScene,
+		generateScenePrompt
 	} from '$lib/stores/appStore';
 	import type { ConversationFixAction } from '$lib/utils/conversationQA';
 	import { analyzeMessageFlow } from '$lib/utils/messageFlow';
@@ -677,6 +687,12 @@
 		return flowInfo.map((info) => info.message);
 	});
 	const characterMap = $derived(new Map($characters.map((c) => [c.id, c])));
+
+	function updateJsonFromConversation() {
+		if (editorView === 'json' && !jsonEditorDirty) {
+			jsonEditorValue = buildConversationJson();
+		}
+	}
 
 	function handleAddMessage() {
 		const firstCharacter = $characters[0];
@@ -826,11 +842,71 @@
 
 	$effect(() => {
 		conversationSyncSignature;
-		if (editorView !== 'json' || jsonEditorDirty) return;
-		jsonEditorValue = buildConversationJson();
+		updateJsonFromConversation();
 	});
 
+	function asRecord(value: unknown): Record<string, unknown> | null {
+		return value && typeof value === 'object' && !Array.isArray(value)
+			? (value as Record<string, unknown>)
+			: null;
+	}
+
+	function applyJsonPayload(payload: unknown) {
+		const record = asRecord(payload);
+		const hasProjectShape =
+			record &&
+			(Array.isArray(record.characters) ||
+				Array.isArray(record.messages) ||
+				Array.isArray(record.connections));
+
+		if (hasProjectShape) {
+			importProjectData(record);
+			return;
+		}
+
+		const nestedProject = record ? asRecord(record.project) : null;
+		const hasNestedProjectShape =
+			nestedProject &&
+			(Array.isArray(nestedProject.characters) ||
+				Array.isArray(nestedProject.messages) ||
+				Array.isArray(nestedProject.connections));
+
+		if (hasNestedProjectShape) {
+			importProjectData(nestedProject);
+			return;
+		}
+
+		importConversationFromJSON(payload);
+	}
+
+	function applyJsonEditorChanges(options: { switchToConversation: boolean }): boolean {
+		try {
+			const payload = JSON.parse(jsonEditorValue);
+			applyJsonPayload(payload);
+			jsonEditorError = null;
+			jsonEditorStatus = 'Conversation JSON applied successfully.';
+			jsonEditorDirty = false;
+			jsonEditorValue = buildConversationJson();
+			if (options.switchToConversation) {
+				editorView = 'conversation';
+			}
+			return true;
+		} catch (error) {
+			jsonEditorStatus = null;
+			jsonEditorError =
+				error instanceof Error
+					? error.message
+					: 'Invalid JSON. Use an array (or conversation/messages array) with speaker + text.';
+			return false;
+		}
+	}
+
 	function setEditorMode(mode: 'conversation' | 'json') {
+		if (mode === 'conversation' && editorView === 'json' && jsonEditorDirty) {
+			applyJsonEditorChanges({ switchToConversation: true });
+			return;
+		}
+
 		editorView = mode;
 		jsonEditorError = null;
 		jsonEditorStatus = null;
@@ -841,21 +917,7 @@
 	}
 
 	function handleJsonApply() {
-		try {
-			const payload = JSON.parse(jsonEditorValue);
-			importConversationFromJSON(payload);
-			jsonEditorError = null;
-			jsonEditorStatus = 'Conversation JSON applied successfully.';
-			jsonEditorDirty = false;
-			jsonEditorValue = buildConversationJson();
-			editorView = 'conversation';
-		} catch (error) {
-			jsonEditorStatus = null;
-			jsonEditorError =
-				error instanceof Error
-					? error.message
-					: 'Invalid JSON. Use an array (or conversation/messages array) with speaker + text.';
-		}
+		applyJsonEditorChanges({ switchToConversation: true });
 	}
 
 	function handleJsonReset() {
@@ -912,6 +974,18 @@
 		}
 	}
 
+	function handleSceneCreate(name: string, description: string, aura: string, characterIds: string[]) {
+		saveCurrentAsScene(name, description, aura, characterIds);
+	}
+
+	function handleSceneLoad(sceneId: string) {
+		loadSceneCharacters(sceneId);
+	}
+
+	function handleSceneDelete(sceneId: string) {
+		deleteScene(sceneId);
+	}
+
 	function handleConversationFix(action: ConversationFixAction): number {
 		return applyConversationQAFix(action);
 	}
@@ -936,6 +1010,10 @@
 	<div class="flex flex-1 flex-col border-r border-border bg-background">
 		<div class="flex items-center justify-between border-b border-border bg-card/70 px-4 py-2.5 backdrop-blur-sm">
 			<div class="flex items-center gap-3">
+				<Button size="sm" variant="outline" onclick={() => (isSceneManagerOpen = true)}>
+					<FolderOpen class="h-4 w-4 mr-1" />
+					Scenes
+				</Button>
 				<Button size="sm" variant="outline" onclick={() => (isCharacterManagerOpen = true)}>
 					Characters
 				</Button>
@@ -1242,6 +1320,18 @@
 		onCreate={handleCharacterManagerCreate}
 		onEdit={handleCharacterManagerEdit}
 		onDelete={handleCharacterManagerDelete}
+	/>
+
+	<SceneManagerDialog
+		open={isSceneManagerOpen}
+		onClose={() => (isSceneManagerOpen = false)}
+		scenes={$scenes}
+		characters={$characters}
+		activeSceneId={$activeSceneId}
+		onCreateScene={handleSceneCreate}
+		onLoadScene={handleSceneLoad}
+		onDeleteScene={handleSceneDelete}
+		onGeneratePrompt={generateScenePrompt}
 	/>
 
 	<CharacterEditor
