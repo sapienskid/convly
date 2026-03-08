@@ -1,8 +1,14 @@
 {
 	"name": "convly-studio",
 	"private": true,
-	"version": "0.0.1",
+	"version": "0.1.0",
+	"license": "UNLICENSED",
 	"type": "module",
+	"packageManager": "pnpm@10.18.1",
+	"engines": {
+		"node": ">=22.0.0",
+		"pnpm": ">=10.0.0"
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
@@ -10,6 +16,12 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"release:verify": "./scripts/release/verify.sh",
+		"release:build": "pnpm run release:verify && pnpm run tauri:build",
+		"arch:install": "./scripts/arch/install-arch.sh",
+		"arch:uninstall": "./scripts/arch/uninstall-arch.sh",
 		"tauri": "tauri",
 		"tauri:dev": "tauri dev",
 		"tauri:build": "tauri build"
@@ -22,7 +34,8 @@
 		"svelte": "^5.39.5",
 		"svelte-check": "^4.3.2",
 		"typescript": "^5.9.2",
-		"vite": "^7.1.7"
+		"vite": "^7.1.7",
+		"vitest": "^4.0.18"
 	},
 	"dependencies": {
 		"@internationalized/date": "^3.10.0",
