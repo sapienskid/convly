@@ -67,9 +67,21 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          APP_VERSION="$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")"
-          TAURI_VERSION="$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).version")"
-          CARGO_VERSION="$(sed -n '/^\[package\]/,/^\[/ s/^version = \"\\([^\"]*\\)\"$/\\1/p' src-tauri/Cargo.toml | head -n1)"
+          APP_VERSION="$(node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));process.stdout.write(p.version)")"
+          TAURI_VERSION="$(node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8'));process.stdout.write(p.version)")"
+          CARGO_VERSION="$(awk -F'\"' '
+            /^\[package\]$/ { in_pkg=1; next }
+            /^\[/ { in_pkg=0 }
+            in_pkg && /^version = \"/ { print $2; exit }
+          ' src-tauri/Cargo.toml)"
+
+          if [[ -z "$APP_VERSION" || -z "$TAURI_VERSION" || -z "$CARGO_VERSION" ]]; then
+            echo "Unable to resolve one or more version values." >&2
+            echo "package.json: ${APP_VERSION:-<empty>}" >&2
+            echo "tauri.conf.json: ${TAURI_VERSION:-<empty>}" >&2
+            echo "Cargo.toml: ${CARGO_VERSION:-<empty>}" >&2
+            exit 1
+          fi
 
           if [[ "$APP_VERSION" != "$TAURI_VERSION" || "$APP_VERSION" != "$CARGO_VERSION" ]]; then
             echo "Version mismatch detected:" >&2
