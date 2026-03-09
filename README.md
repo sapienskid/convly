@@ -79,7 +79,7 @@ Release workflow behavior:
 - Ensures versions in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml` match
 - Creates annotated tag `v<version>` if it does not exist
 - Builds Linux AppImage bundles via Tauri
-- Publishes a GitHub Release using generated notes from `scripts/release/generate-release-notes.sh`
+- Publishes a GitHub Release using generated notes from an inline workflow step
 - Uploads AppImage artifacts to the release automatically
 
 To trigger a new release, bump the app version in all three files and push to `main` (or `master`).
@@ -92,12 +92,13 @@ Install Convly Studio system-wide on Arch Linux:
 pnpm run arch:install
 ```
 
-Useful options:
+This uses `makepkg --syncdeps --install`, so required dependencies are installed automatically when missing.
+The package build uses a release Cargo build with `custom-protocol`, so the installed binary is a native desktop app and does not depend on a localhost dev server.
+
+Build package only:
 
 ```bash
-./scripts/arch/install-arch.sh --prefix /usr/local
-./scripts/arch/install-arch.sh --skip-deps
-./scripts/arch/install-arch.sh --skip-verify
+pnpm run arch:build
 ```
 
 Uninstall:

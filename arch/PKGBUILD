@@ -1,0 +1,70 @@
+# Maintainer: Convly Team
+pkgname=convly-studio
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Visual conversation storyboard and vertical video exporter'
+arch=('x86_64')
+url='https://github.com/convly/convly'
+license=('custom:UNLICENSED')
+depends=(
+  'gtk3'
+  'libsoup3'
+  'webkit2gtk-4.1'
+)
+makedepends=(
+  'cargo'
+  'nodejs'
+  'pnpm'
+  'rsync'
+)
+options=('!debug')
+source=('convly-studio.desktop')
+sha256sums=('SKIP')
+
+prepare() {
+  local repo_root
+  repo_root="$(realpath "${startdir}/..")"
+
+  rm -rf "${srcdir}/convly-studio-src"
+  mkdir -p "${srcdir}/convly-studio-src"
+
+  rsync -a --delete \
+    --exclude='.git' \
+    --exclude='node_modules' \
+    --exclude='.svelte-kit' \
+    --exclude='build' \
+    --exclude='src-tauri/target' \
+    --exclude='arch/pkg' \
+    --exclude='arch/src' \
+    "${repo_root}/" "${srcdir}/convly-studio-src/"
+}
+
+build() {
+  cd "${srcdir}/convly-studio-src"
+
+  pnpm install --frozen-lockfile
+
+  # Run the same quality/build gate used in local and CI release flows.
+  pnpm run release:verify
+
+  # Build a native desktop binary that loads bundled frontend assets.
+  cargo build --manifest-path src-tauri/Cargo.toml --release --features custom-protocol
+}
+
+package() {
+  cd "${srcdir}/convly-studio-src"
+
+  local bin_path=''
+  if [[ -x src-tauri/target/release/convly_studio ]]; then
+    bin_path='src-tauri/target/release/convly_studio'
+  elif [[ -x src-tauri/target/release/convly-studio ]]; then
+    bin_path='src-tauri/target/release/convly-studio'
+  else
+    echo 'Unable to find compiled Convly Studio binary.' >&2
+    return 1
+  fi
+
+  install -Dm755 "${bin_path}" "${pkgdir}/usr/bin/convly-studio"
+  install -Dm644 src-tauri/icons/128x128.png "${pkgdir}/usr/share/icons/hicolor/128x128/apps/convly-studio.png"
+  install -Dm644 "${srcdir}/convly-studio.desktop" "${pkgdir}/usr/share/applications/convly-studio.desktop"
+}

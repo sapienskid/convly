@@ -96,9 +96,47 @@ jobs:
       - name: Generate release notes
         if: steps.tag.outputs.exists == 'false'
         run: |
-          ./scripts/release/generate-release-notes.sh \
-            "${{ steps.version.outputs.app_version }}" \
-            "$RUNNER_TEMP/release-notes.md"
+          set -Eeuo pipefail
+
+          VERSION="${{ steps.version.outputs.app_version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          OUTPUT_FILE="$RUNNER_TEMP/release-notes.md"
+
+          FULL_SHA="$(git rev-parse HEAD)"
+          SHORT_SHA="$(git rev-parse --short=12 HEAD)"
+          RELEASE_DATE="$(date -u +'%Y-%m-%d')"
+          PREVIOUS_TAG="$(git tag --list 'v*' --sort=-v:refname | grep -Fxv "$TAG" | head -n1 || true)"
+
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            CHANGES="$(git log --no-merges --pretty=format:'- %s (%h)' "$PREVIOUS_TAG..HEAD" | sed '/^[[:space:]]*$/d' || true)"
+          else
+            CHANGES="$(git log --no-merges --pretty=format:'- %s (%h)' | sed '/^[[:space:]]*$/d' || true)"
+          fi
+
+          if [[ -z "$CHANGES" ]]; then
+            CHANGES='- Maintenance release.'
+          fi
+
+          {
+            echo "# Convly Studio $TAG"
+            echo
+            echo "Date: $RELEASE_DATE"
+            echo "Commit: \`$FULL_SHA\`"
+            if [[ -n "$PREVIOUS_TAG" ]]; then
+              echo "Previous tag: \`$PREVIOUS_TAG\`"
+            fi
+            echo
+            echo "## Summary"
+            echo "Automated release for version \`$VERSION\` from commit \`$SHORT_SHA\`."
+            echo
+            echo "## Changes"
+            echo "$CHANGES"
+            if [[ -n "$PREVIOUS_TAG" ]]; then
+              echo
+              echo "## Compare"
+              echo "https://github.com/${GITHUB_REPOSITORY}/compare/${PREVIOUS_TAG}...${TAG}"
+            fi
+          } > "$OUTPUT_FILE"
 
       - name: Build AppImage bundle
         if: steps.tag.outputs.exists == 'false'

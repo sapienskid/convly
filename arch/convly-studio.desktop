@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Convly Studio
+Comment=Visual conversation storyboard and vertical video exporter
+Exec=convly-studio
+Icon=convly-studio
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;
+StartupWMClass=Convly Studio

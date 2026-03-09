@@ -7,6 +7,10 @@ node_modules
 .wrangler
 /.svelte-kit
 /build
+/arch/pkg/
+/arch/src/
+/arch/*.pkg.tar.zst
+/arch/*.pkg.tar.zst.sig
 
 # OS
 .DS_Store
