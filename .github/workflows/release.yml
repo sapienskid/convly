@@ -153,7 +153,7 @@ jobs:
 
       - name: Build AppImage bundle
         if: steps.tag.outputs.exists == 'false'
-        run: pnpm run tauri:build -- --bundles appimage
+        run: pnpm run tauri:build --bundles appimage
 
       - name: Collect AppImage assets
         if: steps.tag.outputs.exists == 'false'
